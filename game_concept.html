@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Concept: Valor Forged</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0b1120;
+            color: #e2e8f0;
+            line-height: 1.7;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 1050px;
+            margin: 0 auto;
+            background: #1e293b;
+            padding: 2.5rem 3rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9);
+            border: 1px solid #334155;
+        }
+        h1 {
+            font-size: 3rem;
+            text-align: center;
+            color: #facc15;
+            border-bottom: 4px solid #facc15;
+            padding-bottom: 0.75rem;
+            margin-bottom: 0.25rem;
+            letter-spacing: 1.5px;
+            text-shadow: 0 0 20px rgba(250, 204, 21, 0.25);
+        }
+        .subhead {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #94a3b8;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            font-size: 1.9rem;
+            color: #facc15;
+            border-left: 6px solid #facc15;
+            padding-left: 1.2rem;
+            margin-top: 2.8rem;
+            margin-bottom: 1.2rem;
+        }
+        h3 {
+            font-size: 1.4rem;
+            color: #cbd5e1;
+            margin-top: 1.8rem;
+            margin-bottom: 0.6rem;
+        }
+        p,
+        li {
+            color: #cbd5e1;
+            margin-bottom: 0.6rem;
+        }
+        ul,
+        ol {
+            padding-left: 2rem;
+            margin-bottom: 1.2rem;
+        }
+        li {
+            margin-bottom: 0.35rem;
+        }
+        .highlight {
+            background: #0f172a;
+            border-left: 6px solid #facc15;
+            padding: 1.2rem 2rem;
+            border-radius: 0.75rem;
+            margin: 1.8rem 0;
+        }
+        .highlight strong {
+            color: #facc15;
+        }
+        .tag {
+            display: inline-block;
+            background: #facc15;
+            color: #0b1120;
+            font-weight: 700;
+            padding: 0.15rem 0.9rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-right: 0.4rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        th {
+            background: #facc15;
+            color: #0b1120;
+            padding: 0.7rem 1rem;
+            text-align: left;
+            font-weight: 700;
+        }
+        td {
+            background: #0f172a;
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid #2d3a4f;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1.5rem;
+        }
+        .footer {
+            margin-top: 3.5rem;
+            padding-top: 2rem;
+            border-top: 2px solid #334155;
+            text-align: center;
+            font-size: 0.95rem;
+            color: #64748b;
+        }
+        .badge {
+            background: #3b82f6;
+            color: #fff;
+            padding: 0.1rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            display: inline-block;
+            margin-left: 0.5rem;
+        }
+        .badge-green {
+            background: #22c55e;
+            color: #0b1120;
+            padding: 0.1rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            display: inline-block;
+            margin-left: 0.5rem;
+        }
+        .code-block {
+            background: #0f172a;
+            padding: 1.2rem 1.5rem;
+            border-radius: 0.75rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            overflow-x: auto;
+            margin: 1rem 0;
+            border: 1px solid #2d3a4f;
+        }
+        @media (max-width: 700px) {
+            .container {
+                padding: 1.5rem;
+            }
+            h1 {
+                font-size: 2.2rem;
+            }
+            h2 {
+                font-size: 1.5rem;
+            }
+            .grid-2,
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- ============ TITLE ============ -->
+        <h1>⚔️ Valor Forged</h1>
+        <p class="subhead">A 3D Action RPG — built with Three.js · 3 distinct acts · deep progression</p>
+
+        <!-- ============ MONSTER ANSWER ============ -->
+        <div class="highlight">
+            <strong>🎮 Monsters — visual quality:</strong>
+            Yes — they will look <strong>proper and clear</strong>, not blocks or simple shapes.
+            We will use free, high-quality <strong>GLTF model packs</strong> from external sources.
+            <strong style="display:block; margin-top:0.5rem;">📌 Note: I will choose all external libraries, assets, and sound effects used in this project.</strong>
+            Each act will have its own themed monster set:
+            <ul style="margin-top:0.5rem;">
+                <li><strong>Act 1:</strong> Slimes / Wolves (green, grassy theme)</li>
+                <li><strong>Act 2:</strong> Spiders / Archers (dark forest theme)</li>
+                <li><strong>Act 3:</strong> Stone Golems / Titans (ruined citadel theme)</li>
+            </ul>
+            All assets will be properly <strong>credited</strong> inside the game's Credits screen.
+        </div>
+
+        <!-- ============ 1. OVERVIEW ============ -->
+        <h2>1. 🎯 Game Overview</h2>
+        <p>
+            <strong>Valor Forged</strong> is a single-player 3D action RPG that runs entirely in a web browser.
+            You play as an adventurer who fights monsters, earns XP and gold, levels up, and progresses
+            through <strong>three radically different Acts</strong>. Each Act introduces a new environment,
+            a new combat challenge, and a unique boss fight.
+        </p>
+        <p>
+            The core loop: <strong>Fight → Earn XP & Gold → Level Up → Unlock new Acts → Face stronger foes</strong>.
+            After clearing all three Acts, the player enters a <strong>free-roam endgame</strong> with a level cap of 299.
+        </p>
+
+        <!-- ============ 2. CORE MECHANICS ============ -->
+        <h2>2. ⚙️ Core Mechanics</h2>
+
+        <h3>2.1 Movement & Controls</h3>
+        <ul>
+            <li><strong>Move:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or Arrow Keys.</li>
+            <li><strong>Attack:</strong> <strong>Click</strong> on a monster (Raycaster-based targeting).</li>
+            <li><strong>Use Potion:</strong> Press <kbd>H</kbd> — heals 50% HP (max 10 potions carried).</li>
+            <li><strong>Interact:</strong> Press <kbd>T</kbd> near an NPC (Innkeeper / Shopkeeper) to open menus.</li>
+            <li><strong>Enter Boss Room:</strong> Walk into the glowing portal and press <kbd>E</kbd>.</li>
+        </ul>
+
+        <h3>2.2 Combat & Feedback</h3>
+        <ul>
+            <li><strong>Click-to-attack</strong> — instant melee/ranged hit detection.</li>
+            <li><strong>Visual feedback:</strong> Floating damage numbers, health bars above monsters, hit-flash (white flash), and knockback.</li>
+            <li><strong>Monster AI:</strong> Melee monsters chase; ranged monsters shoot projectiles; bosses use state-machine patterns.</li>
+        </ul>
+
+        <h3>2.3 Progression — Leveling & Scaling</h3>
+        <ul>
+            <li><strong>XP Gain:</strong> <code>Base_XP × (Monster_Level / Player_Level)</code> — fighting lower-level monsters gives almost no XP.</li>
+            <li><strong>Gold Gain:</strong> <code>Base_Gold + (Monster_Level × 5)</code> — harder fights always pay more.</li>
+            <li><strong>Level Cap:</strong> 299 (post-game free roam).</li>
+            <li><strong>Level requirements to enter boss rooms:</strong>
+                <ul>
+                    <li>Act 1 Boss: <strong>Level 40</strong> (recommended 46+)</li>
+                    <li>Act 2 Boss: <strong>Level 120</strong> (recommended 126+)</li>
+                    <li>Act 3 Boss: <strong>Level 200</strong> (recommended 206+)</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>2.4 Death & Penalty</h3>
+        <ul>
+            <li>When you die, you <strong>respawn at the last Inn</strong> where you saved, with full HP.</li>
+            <li>You lose <strong>10% of your current gold</strong> — painful enough to matter, not frustrating enough to quit.</li>
+        </ul>
+
+        <h3>2.5 Saving & Loading</h3>
+        <ul>
+            <li>You can only save at an <strong>Inn</strong> by speaking to the Innkeeper (<kbd>T</kbd> → Save).</li>
+            <li>Saved data (username, level, XP, gold, position, Act, potions) is stored in the browser's <strong>localStorage</strong>.</li>
+            <li>When you log back in, you <strong>respawn exactly at that Inn's front door</strong>.</li>
+        </ul>
+
+        <h3>2.6 Economy & Shops</h3>
+        <ul>
+            <li><strong>Weapon Shop:</strong> Buy better weapons — each has a <strong>level requirement</strong> (e.g., "Requires Level 15").</li>
+            <li><strong>Potion Shop:</strong> Buy health potions (max 10).</li>
+            <li><strong>Weapons</strong> do not change the character's visual model (to save development time) — they just increase the <strong>Attack stat</strong> shown in the UI.</li>
+        </ul>
+
+        <!-- ============ 3. THE 3 ACTS ============ -->
+        <h2>3. 🏰 The Three Acts — Distinct Experiences</h2>
+        <p>
+            Each Act is <strong>genuinely different</strong> — not just a reskin. They differ in environment, combat style, boss mechanics, and the skill the player must master.
+        </p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Act</th>
+                    <th>Environment</th>
+                    <th>Core Mechanic</th>
+                    <th>Boss Attack Pattern</th>
+                    <th>Level Req.</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>1 — Verdant Valley</strong></td>
+                    <td>Open grasslands, wide paths</td>
+                    <td><strong>Positioning</strong> — stand still and click-trade with slow melee monsters.</td>
+                    <td>Charges in a straight line — dodge left/right with WASD.</td>
+                    <td>40</td>
+                </tr>
+                <tr>
+                    <td><strong>2 — Shadowgrove Forest</strong></td>
+                    <td>Dense, foggy forest with twisty paths</td>
+                    <td><strong>Precision &amp; Cover</strong> — ranged monsters shoot projectiles; use trees as cover.</td>
+                    <td>Shoots homing fireballs — hide behind trees to break line-of-sight.</td>
+                    <td>120</td>
+                </tr>
+                <tr>
+                    <td><strong>3 — Highland Citadel</strong></td>
+                    <td>Ruined fortress, narrow bridges over void</td>
+                    <td><strong>Resource Management</strong> — manage HP, potions, and positioning on thin walkways.</td>
+                    <td><strong>3-phase</strong> (Charge → Shoot → Ground Slam) — use all skills learned.</td>
+                    <td>200</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="highlight">
+            <strong>📌 Examiner-ready answer:</strong>
+            <em>"Act 1 tests reflexes, Act 2 tests spatial awareness and precision, Act 3 tests tactical resource management — they are completely non-interchangeable."</em>
+        </div>
+
+        <h3>3.1 Boss Room Entry & Hints</h3>
+        <ul>
+            <li>At the end of each forest path, a <strong>glowing portal</strong> (rotating torus) marks the boss entrance.</li>
+            <li>A <strong>stone sign</strong> next to the portal gives a hint:
+                <ul>
+                    <li>Act 2 hint: <em>"The trees are your shield."</em></li>
+                    <li>Act 3 hint: <em>"The bridge is narrow — choose your steps wisely."</em></li>
+                </ul>
+            </li>
+        </ul>
+
+        <!-- ============ 4. TOWNS & NPCS ============ -->
+        <h2>4. 🏘️ Towns & NPCs</h2>
+        <ul>
+            <li><strong>Towns</strong> are safe zones with several buildings (visual only).</li>
+            <li><strong>Interactive NPCs</strong> stand outside:
+                <ul>
+                    <li><strong>Innkeeper</strong> — press <kbd>T</kbd> to Save or Cancel.</li>
+                    <li><strong>Weaponsmith</strong> — press <kbd>T</kbd> to open the weapon shop.</li>
+                    <li><strong>Alchemist</strong> — press <kbd>T</kbd> to open the potion shop.</li>
+                </ul>
+            </li>
+            <li>No complex dialogue — just clean <strong>menu popups</strong> (Buy / Cancel).</li>
+        </ul>
+
+        <!-- ============ 5. UI / HUD ============ -->
+        <h2>5. 🖥️ User Interface</h2>
+        <ul>
+            <li><strong>Top-left:</strong> Mini-map (2D canvas) — shows player dot, facing direction arrow, and town locations.</li>
+            <li><strong>Top-right:</strong> Player stats — HP bar, Level, XP bar, Gold, Potion count.</li>
+            <li><strong>Bottom-center:</strong> Context prompts — e.g., <em>"Press T to Talk"</em> or <em>"Press E to Enter"</em>.</li>
+            <li><strong>Start screen:</strong> Username input + Male / Female avatar selection (stored in localStorage).</li>
+            <li><strong>Credits screen:</strong> Accessible from the main menu — lists every external asset, library, and sound with URLs and licenses.</li>
+        </ul>
+
+        <!-- ============ 6. POST-GAME ============ -->
+        <h2>6. 🏆 Post-Game (After Act 3)</h2>
+        <ul>
+            <li>Act 3 boss defeated → <strong>"Victory"</strong> screen appears.</li>
+            <li>The game does not end — you can continue playing in <strong>free-roam mode</strong>.</li>
+            <li>Keep fighting monsters to gain XP and gold, level up to <strong>299</strong> (hard cap).</li>
+            <li>No new content — just bragging rights and endless grinding.</li>
+        </ul>
+
+        <!-- ============ 7. ASSETS & CREDITS ============ -->
+        <h2>7. 📦 External Assets — Sourcing & Credits</h2>
+        <ul>
+            <li><strong>Monsters & Characters:</strong> Free GLTF models from sources I will select (e.g., Sketchfab, OpenGameArt, Quaternius).</li>
+            <li><strong>Environment:</strong> Low-poly trees, houses, and terrain textures from free asset repositories.</li>
+            <li><strong>Sound:</strong> Free sound effects from Freesound.org or similar.</li>
+            <li><strong>Libraries:</strong> Three.js (MIT), GLTFLoader (MIT), and any others I choose.</li>
+            <li><strong>All third-party work will be listed</strong> in the in-game Credits screen — fulfilling the project brief's requirement.</li>
+        </ul>
+        <div class="highlight">
+            <strong>✅ Innovation reward:</strong> Building on libraries is expected. The <strong>original work</strong> is your boss state-machine AI, the XP scaling formula, the save system, and the three distinct level designs.
+            <br><br>
+            <strong>📌 I will personally select and source all external libraries, assets, and audio.</strong>
+        </div>
+
+        <!-- ============ 8. GITHUB ACTIONS WORKFLOW ============ -->
+        <h2>8. 🔄 GitHub Actions — Deployment & Testing</h2>
+        <p>
+            We will use <strong>GitHub Actions</strong> as our CI/CD pipeline. This automates testing, building, and deployment, allowing us to track progress with every commit.
+        </p>
+
+        <h3>8.1 Deployment to GitHub Pages</h3>
+        <ul>
+            <li>The game will be hosted on <strong>GitHub Pages</strong> during development before moving to the LAMP server.</li>
+            <li>A workflow will automatically deploy the latest code whenever we push to the <code>main</code> branch.</li>
+            <li>Live preview URL: <code>https://[username].github.io/[repository-name]/</code></li>
+        </ul>
+
+        <h3>8.2 Automated Testing</h3>
+        <ul>
+            <li><strong>Unit Tests:</strong> We will write tests for core game logic (XP formulas, combat calculations, save/load) using <strong>Jest</strong> or <strong>Vitest</strong>.</li>
+            <li><strong>Linting:</strong> ESLint will check code quality on every push.</li>
+            <li><strong>E2E Tests (Optional):</strong> Cypress or Playwright can be configured to test that the game loads and basic interactions work.</li>
+        </ul>
+
+        <h3>8.3 Sample Workflow File</h3>
+        <p>Create a file at <code>.github/workflows/deploy.yml</code> with the following content:</p>
+        <div class="code-block">
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        </div>
+
+        <h3>8.4 Benefits of This Workflow</h3>
+        <div class="grid-3">
+            <div>
+                <strong>🚀 Instant Previews</strong>
+                <p>Every commit is live within minutes. Share the link with anyone.</p>
+            </div>
+            <div>
+                <strong>🧪 Catch Bugs Early</strong>
+                <p>Tests run automatically. If something breaks, you'll know immediately.</p>
+            </div>
+            <div>
+                <strong>📦 Progress Tracking</strong>
+                <p>GitHub Actions logs every build and test run — you can see exactly when things started working.</p>
+            </div>
+        </div>
+
+        <!-- ============ 9. DEVELOPMENT PLAN ============ -->
+        <h2>9. 🛠️ Development Plan — Build Order (to avoid burnout)</h2>
+        <p>
+            Work in <strong>small, testable chunks</strong>. Do not build the whole world at once. Here is the recommended 10-day schedule:
+        </p>
+        <ol>
+            <li><strong>Day 1–2:</strong> WASD movement + third-person camera follow. No monsters yet — just a character walking around a flat plane.</li>
+            <li><strong>Day 3–4:</strong> Click-to-attack (Raycaster) + one basic slime monster with a health bar and simple chase AI.</li>
+            <li><strong>Day 5:</strong> Inn saving (<code>localStorage</code>) + Shop UI (HTML popups for weapon/potion buying).</li>
+            <li><strong>Day 6:</strong> Mini-map (2D canvas overlay with player dot and direction arrow).</li>
+            <li><strong>Day 7:</strong> Act 1 Boss — charging mechanic. Just code the boss behavior and the dodge-test.</li>
+            <li><strong>Day 8:</strong> Act 2 environment (forest trees + fog) + Act 2 Boss — homing fireballs + cover mechanic.</li>
+            <li><strong>Day 9:</strong> Act 3 environment (narrow bridges over void) + 3-phase Act 3 Boss.</li>
+            <li><strong>Day 10:</strong> Polish — health potions (<kbd>H</kbd>), death/respawn system, Credits screen, and final balance tweaks.</li>
+        </ol>
+        <div class="highlight">
+            <strong>💡 Pro tip:</strong> After Day 4, you already have a <em>playable</em> game. Everything after is just adding content. This keeps you motivated and gives you something to show early.
+        </div>
+
+        <!-- ============ 10. FINAL CHECKLIST ============ -->
+        <h2>10. ✅ Final Confirmation — Nothing Missing</h2>
+        <div class="grid-2">
+            <div>
+                <h3>✅ Designed & Locked</h3>
+                <ul>
+                    <li>3 distinct Acts (Grass / Forest / Citadel)</li>
+                    <li>Boss fights with level reqs (40/120/200)</li>
+                    <li>XP scaling formula</li>
+                    <li>Gold + economy</li>
+                    <li>Inn saving (localStorage)</li>
+                    <li>Death penalty (respawn, -10% gold)</li>
+                    <li>Weapon + Potion shops</li>
+                    <li>WASD movement + click attack</li>
+                    <li>Mini-map with direction arrow</li>
+                    <li>Post-game free roam (cap 299)</li>
+                    <li>GitHub Actions CI/CD pipeline</li>
+                </ul>
+            </div>
+            <div>
+                <h3>✅ To Be Built</h3>
+                <ul>
+                    <li>Start screen (username + gender)</li>
+                    <li>Monster AI (chase / ranged / boss states)</li>
+                    <li>Combat feedback (floating numbers, HP bars)</li>
+                    <li>Portal + boss room entry</li>
+                    <li>Credits screen (external assets)</li>
+                    <li>Hosting on LAMP server (final deployment)</li>
+                    <li>2-min Trailer + Devlog video</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="highlight" style="border-left-color: #22c55e;">
+            <strong>📌 Developer's Note:</strong>
+            I will personally select and source all external libraries, 3D models, textures, and sound effects.
+            The GitHub Actions workflow will track progress, run tests, and deploy previews automatically.
+        </div>
+
+        <!-- ============ FOOTER ============ -->
+        <div class="footer">
+            <p>
+                <strong>Valor Forged</strong> — Concept fully fleshed out. Ready for development.
+                <br />
+                All external assets will be credited. The game is designed to run entirely client-side,
+                hosted on the department LAMP server with zero setup for the player.
+            </p>
+            <p style="margin-top:0.5rem; color:#475569;">
+                🚀 <em>"Three levels, three distinct experiences, one legend."</em>
+            </p>
+        </div>
+
+    </div>
+</body>
+</html>
