@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Valor Forged — 3D Action RPG</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- Start Screen -->
+  <div id="start-screen">
+    <div class="start-panel">
+      <h1>⚔️ Valor Forged</h1>
+      <p class="tagline">Three Acts. One Legend.</p>
+      <div class="form-group">
+        <label for="username">Adventurer Name</label>
+        <input type="text" id="username" placeholder="Enter your name" maxlength="16" value="Kirito" />
+      </div>
+      <div class="form-group">
+        <label>Avatar</label>
+        <div class="avatar-select">
+          <button class="avatar-btn selected" data-gender="male">Male</button>
+          <button class="avatar-btn" data-gender="female">Female</button>
+        </div>
+      </div>
+      <button id="start-btn" class="primary-btn">Begin Adventure</button>
+      <button id="load-btn" class="secondary-btn">Continue Save</button>
+      <button id="credits-btn" class="secondary-btn">Credits</button>
+    </div>
+  </div>
+
+  <!-- Credits -->
+  <div id="credits-screen" class="hidden">
+    <div class="credits-panel">
+      <h2>Credits & Assets</h2>
+      <ul>
+        <li><strong>Three.js</strong> — MIT</li>
+        <li><strong>Models</strong> — Sketchfab (CC-BY / Free) — Quaternius, BannedSteak, and community creators</li>
+        <li><strong>Nature Pack</strong> — Stylized Nature MegaKit</li>
+        <li><strong>Game Concept</strong> — Valor Forged design document</li>
+      </ul>
+      <p class="note">All third-party assets are free for commercial use with credit.</p>
+      <button id="close-credits" class="primary-btn">Back</button>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading" class="hidden">
+    <div class="loader">
+      <div class="spinner"></div>
+      <p id="loading-text">Forging your world...</p>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="player-info">
+      <div class="name-level"><span id="hud-name">Hero</span> · Lv <span id="hud-level">1</span></div>
+      <div class="bar-row">
+        <span class="bar-label">HP</span>
+        <div class="bar hp-bar"><div id="hp-fill" class="fill"></div></div>
+        <span id="hp-text">100/100</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">XP</span>
+        <div class="bar xp-bar"><div id="xp-fill" class="fill"></div></div>
+        <span id="xp-text">0/100</span>
+      </div>
+      <div class="stats-row">
+        <span>⚔ <span id="hud-atk">12</span></span>
+        <span>💰 <span id="hud-gold">50</span></span>
+        <span>🧪 <span id="hud-potions">3</span>/10</span>
+      </div>
+      <div class="act-row">Act <span id="hud-act">1</span> — <span id="hud-act-name">Verdant Valley</span></div>
+    </div>
+    <div id="minimap-wrap">
+      <canvas id="minimap" width="160" height="160"></canvas>
+    </div>
+    <div id="controls-hint">
+      WASD Move · Click Attack · H Potion · T Talk · E Portal
+    </div>
+  </div>
+
+  <!-- Context prompt -->
+  <div id="context-prompt" class="hidden"></div>
+
+  <!-- Damage numbers container -->
+  <div id="damage-layer"></div>
+
+  <!-- Modal (shops / dialogue) -->
+  <div id="modal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="modal-title">Shop</h2>
+      <div id="modal-body"></div>
+      <button id="modal-close" class="secondary-btn">Close</button>
+    </div>
+  </div>
+
+  <!-- Overlay messages (death, level up, boss clear) -->
+  <div id="overlay" class="hidden">
+    <div class="overlay-panel">
+      <h2 id="overlay-title">Message</h2>
+      <p id="overlay-text"></p>
+      <button id="overlay-btn" class="primary-btn">Continue</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
