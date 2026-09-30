@@ -13,19 +13,24 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 |---------|--------|
 | WASD / Arrow movement + third-person camera | ✅ |
 | Click-to-attack (Raycaster) | ✅ |
-| Floating damage numbers + HP bars | ✅ |
-| Monster AI (chase + melee/ranged) | ✅ |
-| 3 Acts with different environments | ✅ |
-| Boss rooms with level requirements (40 / 120 / 200) | ✅ |
-| XP scaling: `Base_XP × (Monster_Level / Player_Level)` | ✅ |
-| Gold formula + Weapon & Potion shops | ✅ |
-| Inn save system (`localStorage`) | ✅ |
-| Death penalty (−10% gold, respawn at last Inn) | ✅ |
-| Mini-map with player direction arrow | ✅ |
+| Hit flash + knockback combat feedback | ✅ |
+| Floating damage / XP / gold numbers + HP bars | ✅ |
+| Melee chase AI + projectile-based ranged enemies | ✅ |
+| Enemy respawning for continued progression | ✅ |
+| 3 Acts with themed environments and enemies | ✅ |
+| Sealed boss arenas with level requirements (40 / 120 / 200) | ✅ |
+| Rebalanced XP / level progression | ✅ |
+| Level-scaled gold rewards + Weapon & Potion shops | ✅ |
+| Health potions restore 50% HP (max 10) | ✅ |
+| Simple localStorage save / load, including position | ✅ |
+| Death penalty: lose 10% gold and return to town | ✅ |
+| Mini-map with enemies, NPC/town markers, portal and facing arrow | ✅ |
 | Start screen (username + gender) | ✅ |
-| Credits screen | ✅ |
-| Post-game free-roam (level cap 299) | ✅ |
-| GitHub Actions CI/CD → GitHub Pages | ✅ |
+| Post-game free roam with recurring enemies | ✅ |
+| Hard level cap: 299 | ✅ |
+| Credits screen with currently identifiable bundled assets | ✅ / attribution details pending |
+| Full unique boss attack patterns from the concept | 🚧 Further polish |
+| Music / sound effects | 🚧 Not added yet |
 
 ---
 
@@ -66,7 +71,7 @@ Open the URL shown by Vite (usually `http://localhost:5173`).
 | 2 — Shadowgrove Forest | Dense foggy forest | Precision & cover | Homing projectiles | 120 |
 | 3 — Highland Citadel | Ruined fortress / bridges | Resource management | 3-phase (Charge → Shoot → Slam) | 200 |
 
-After defeating the Act 3 boss you enter **free-roam** mode. Level hard-cap = **299**.
+After defeating the Act 3 boss you enter **free-roam** mode. Normal enemies continue respawning so progression can continue to the hard level cap of **299**.
 
 ---
 
@@ -77,8 +82,7 @@ All third-party libraries, 3D models, textures and audio will be:
 1. Selected by the developer
 2. Fully credited inside the in-game **Credits** screen (with URLs + licenses)
 
-Current placeholders use procedural geometry so the prototype runs immediately.  
-Replace the simple meshes with free high-quality **GLTF** packs (Quaternius, Sketchfab CC0, OpenGameArt) for production visual quality matching the reference images.
+The current build already contains bundled GLB models for the player, monsters, bosses, NPCs, buildings and environment. Exact creator/source/license metadata still needs to be completed per asset before final submission.
 
 **Libraries in use**
 - Three.js (MIT)

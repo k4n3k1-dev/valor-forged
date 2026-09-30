@@ -51,35 +51,41 @@ const WEAPONS = [
   { name: 'Mythril Greatsword', atk: 220, price: 7000, req: 180 }
 ];
 
+const MAX_LEVEL = 299;
+const POTION_HEAL_FRACTION = 0.5;
+const DEATH_GOLD_LOSS_FRACTION = 0.10;
+const MONSTER_RESPAWN_MIN_MS = 2500;
+const MONSTER_RESPAWN_MAX_MS = 5000;
+
 const MODEL_PATHS = {
   player: {
-    male: '/models/player/male.glb',
-    female: '/models/player/female.glb'
+    male: 'models/player/male.glb',
+    female: 'models/player/female.glb'
   },
   monsters: {
-    slime: '/models/monsters/slime/slime_animated.glb',
-    wolf: '/models/monsters/wolf/wolf.glb',
-    spider: '/models/monsters/spider/spider_rigged.glb',
-    archer: '/models/monsters/archer/archer_stylized.glb',
-    golem: '/models/monsters/golem/stone_golem.glb'
+    slime: 'models/monsters/slime/slime_animated.glb',
+    wolf: 'models/monsters/wolf/wolf.glb',
+    spider: 'models/monsters/spider/spider_rigged.glb',
+    archer: 'models/monsters/archer/archer_stylized.glb',
+    golem: 'models/monsters/golem/stone_golem.glb'
   },
   bosses: {
-    1: '/models/bosses/act1_boss.glb',
-    2: '/models/bosses/act2_boss.glb',
-    3: '/models/bosses/act3_boss_golem.glb'
+    1: 'models/bosses/act1_boss.glb',
+    2: 'models/bosses/act2_boss.glb',
+    3: 'models/bosses/act3_boss_golem.glb'
   },
   npcs: {
-    weaponsmith: '/models/npcs/weaponsmith.glb'
+    weaponsmith: 'models/npcs/weaponsmith.glb'
   },
   buildings: {
-    inn: '/models/buildings/low-poly_outsource_tavern.glb',
-    shop: '/models/buildings/weapon_shop.glb'
+    inn: 'models/buildings/low-poly_outsource_tavern.glb',
+    shop: 'models/buildings/weapon_shop.glb'
   },
   env: {
-    tree: ['/models/environment/tree_01.glb', '/models/environment/tree_02.glb', '/models/environment/tree_03.glb'],
-    pine: ['/models/environment/pine_01.glb', '/models/environment/pine_02.glb'],
-    bush: '/models/environment/bush.glb',
-    rock: ['/models/environment/rock_medium.glb', '/models/environment/rock_small.glb']
+    tree: ['models/environment/tree_01.glb', 'models/environment/tree_02.glb', 'models/environment/tree_03.glb'],
+    pine: ['models/environment/pine_01.glb', 'models/environment/pine_02.glb'],
+    bush: 'models/environment/bush.glb',
+    rock: ['models/environment/rock_medium.glb', 'models/environment/rock_small.glb']
   }
 };
 
@@ -105,6 +111,7 @@ const state = {
     act3BossDefeated: false
   },
   currentAct: 1,
+  freeRoam: false,
   inBossRoom: false,
   isDead: false,
   bossPhase: 1
@@ -116,7 +123,10 @@ let playerGroup, playerModel;
 let monsters = [];
 let npcs = [];
 let portals = [];
+let projectiles = [];
 let envGroup;
+let bossArenaGroup = null;
+let worldGeneration = 0;
 let keys = {};
 let raycaster = new THREE.Raycaster();
 let mouse = new THREE.Vector2();
@@ -139,15 +149,49 @@ const contextPrompt = $('context-prompt');
 
 // ===================== UTILS =====================
 function xpForLevel(lv) {
-  return Math.floor(100 * Math.pow(1.15, lv - 1));
+  if (lv >= MAX_LEVEL) return 0;
+  const n = Math.max(0, lv - 1);
+  return Math.floor(100 + n * 22 + Math.pow(n, 1.12) * 4);
+}
+
+function clampPlayerProgression() {
+  const p = state.player;
+  p.level = THREE.MathUtils.clamp(Math.floor(p.level || 1), 1, MAX_LEVEL);
+  p.maxHp = 100 + (p.level - 1) * 12;
+  p.hp = THREE.MathUtils.clamp(Number(p.hp) || p.maxHp, 0, p.maxHp);
+  p.weaponIdx = THREE.MathUtils.clamp(Math.floor(p.weaponIdx || 0), 0, WEAPONS.length - 1);
+  p.attack = WEAPONS[p.weaponIdx].atk + Math.floor((p.level - 1) * 1.5);
+  p.potions = THREE.MathUtils.clamp(Math.floor(p.potions || 0), 0, 10);
+  p.gold = Math.max(0, Math.floor(Number(p.gold) || 0));
+  if (p.level >= MAX_LEVEL) {
+    p.level = MAX_LEVEL;
+    p.xp = 0;
+    p.xpToNext = 0;
+  } else {
+    p.xp = Math.max(0, Math.floor(Number(p.xp) || 0));
+    p.xpToNext = xpForLevel(p.level);
+  }
+}
+
+function monsterLevelForAct(actNum, isBoss = false) {
+  if (isBoss) return ACT[actNum].bossReq;
+  const floor = actNum === 1 ? 1 : actNum === 2 ? 40 : 120;
+  const ceiling = actNum === 1 ? 55 : actNum === 2 ? 135 : MAX_LEVEL;
+  const variance = Math.floor(Math.random() * 7) - 3;
+  return THREE.MathUtils.clamp(state.player.level + variance, floor, ceiling);
+}
+
+function isBossDefeated(actNum) {
+  return Boolean(state.flags[`act${actNum}BossDefeated`]);
 }
 
 function showDamage(worldPos, amount, type = 'dmg') {
   const layer = $('damage-layer');
   const el = document.createElement('div');
-  el.className = 'dmg-num' + (type === 'heal' ? ' heal' : type === 'xp' ? ' xp' : '');
-  el.textContent = type === 'xp' ? `+${amount} XP` : (type === 'heal' ? `+${amount}` : `-${amount}`);
-  // project to screen
+  el.className = 'dmg-num' + (type === 'heal' ? ' heal' : type === 'xp' ? ' xp' : type === 'gold' ? ' gold' : '');
+  if (type === 'xp') el.textContent = `+${amount} XP`;
+  else if (type === 'gold') el.textContent = `+${amount}g`;
+  else el.textContent = type === 'heal' ? `+${amount}` : `-${amount}`;
   const v = worldPos.clone().project(camera);
   const x = (v.x * 0.5 + 0.5) * window.innerWidth;
   const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
@@ -155,6 +199,43 @@ function showDamage(worldPos, amount, type = 'dmg') {
   el.style.top = y + 'px';
   layer.appendChild(el);
   setTimeout(() => el.remove(), 900);
+}
+
+function flashMonster(mon) {
+  const touched = [];
+  mon.mesh.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    materials.forEach(mat => {
+      if (!mat) return;
+      if (mat.emissive) {
+        touched.push({ mat, emissive: mat.emissive.clone(), intensity: mat.emissiveIntensity ?? 1 });
+        mat.emissive.set(0xffffff);
+        mat.emissiveIntensity = 1.8;
+      } else if (mat.color) {
+        touched.push({ mat, color: mat.color.clone() });
+        mat.color.set(0xffffff);
+      }
+    });
+  });
+  setTimeout(() => {
+    touched.forEach(t => {
+      if (t.emissive) {
+        t.mat.emissive.copy(t.emissive);
+        t.mat.emissiveIntensity = t.intensity;
+      }
+      if (t.color) t.mat.color.copy(t.color);
+    });
+  }, 90);
+}
+
+function applyKnockback(mon, strength = 1) {
+  if (!playerGroup || !mon?.mesh) return;
+  const dir = mon.mesh.position.clone().sub(playerGroup.position);
+  dir.y = 0;
+  if (dir.lengthSq() < 0.0001) dir.set(0, 0, -1);
+  dir.normalize();
+  mon.mesh.position.addScaledVector(dir, mon.isBoss ? strength * 0.35 : strength);
 }
 
 function showOverlay(title, text, cb) {
@@ -178,20 +259,33 @@ function updateHUD() {
   $('hud-gold').textContent = p.gold;
   $('hud-potions').textContent = p.potions;
   $('hud-act').textContent = state.currentAct;
-  $('hud-act-name').textContent = ACT[state.currentAct].name;
+  $('hud-act-name').textContent = state.freeRoam ? `${ACT[state.currentAct].name} · Free Roam` : ACT[state.currentAct].name;
   const hpPct = Math.max(0, p.hp / p.maxHp * 100);
   $('hp-fill').style.width = hpPct + '%';
   $('hp-text').textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
-  const xpPct = p.xp / p.xpToNext * 100;
-  $('xp-fill').style.width = xpPct + '%';
-  $('xp-text').textContent = `${p.xp}/${p.xpToNext}`;
+  if (p.level >= MAX_LEVEL || p.xpToNext <= 0) {
+    $('xp-fill').style.width = '100%';
+    $('xp-text').textContent = 'MAX';
+  } else {
+    const xpPct = THREE.MathUtils.clamp(p.xp / p.xpToNext * 100, 0, 100);
+    $('xp-fill').style.width = xpPct + '%';
+    $('xp-text').textContent = `${p.xp}/${p.xpToNext}`;
+  }
 }
 
 function saveGame() {
+  clampPlayerProgression();
   const data = {
+    version: 2,
     player: { ...state.player },
     flags: { ...state.flags },
-    currentAct: state.currentAct
+    currentAct: state.currentAct,
+    freeRoam: state.freeRoam,
+    position: playerGroup ? {
+      x: playerGroup.position.x,
+      y: playerGroup.position.y,
+      z: playerGroup.position.z
+    } : null
   };
   localStorage.setItem('valorForgedSave', JSON.stringify(data));
 }
@@ -201,11 +295,22 @@ function loadGame() {
   if (!raw) return false;
   try {
     const data = JSON.parse(raw);
+    if (!data || !data.player) return false;
     Object.assign(state.player, data.player);
     Object.assign(state.flags, data.flags || {});
-    state.currentAct = data.currentAct || 1;
+    state.currentAct = THREE.MathUtils.clamp(Number(data.currentAct) || state.player.act || 1, 1, 3);
+    if (state.flags.act3BossDefeated) state.currentAct = 3;
+    else if (state.flags.act2BossDefeated) state.currentAct = Math.max(state.currentAct, 3);
+    else if (state.flags.act1BossDefeated) state.currentAct = Math.max(state.currentAct, 2);
+    state.player.act = state.currentAct;
+    state.freeRoam = Boolean(data.freeRoam || state.flags.act3BossDefeated);
+    state.inBossRoom = false;
+    state.isDead = false;
+    state.savedPosition = data.position || null;
+    clampPlayerProgression();
     return true;
-  } catch {
+  } catch (err) {
+    console.warn('Could not load save:', err);
     return false;
   }
 }
@@ -287,11 +392,15 @@ async function setupThree() {
 }
 
 async function buildAct(actNum) {
+  worldGeneration++;
+  clearBossArena();
+  clearProjectiles();
+  envGroup.visible = true;
   // clear previous
   while (envGroup.children.length) envGroup.remove(envGroup.children[0]);
   monsters.forEach(m => scene.remove(m.mesh));
   monsters = [];
-  portals.forEach(p => scene.remove(p));
+  portals.forEach(p => { scene.remove(p); if (p.userData.light) scene.remove(p.userData.light); });
   portals = [];
   npcs.forEach(n => scene.remove(n.mesh));
   npcs = [];
@@ -317,8 +426,8 @@ async function buildAct(actNum) {
   // Monsters
   await spawnMonsters(actNum);
 
-  // Boss portal
-  await spawnBossPortal(actNum);
+  // Boss portal is only available until that Act's boss is defeated.
+  if (!isBossDefeated(actNum) && !state.freeRoam) await spawnBossPortal(actNum);
 }
 
 async function scatterEnvironment(actNum) {
@@ -461,6 +570,11 @@ async function createMonster(type, x, z, isBoss = false) {
     mesh = await loadModel(path);
     const h = isBoss ? (state.currentAct === 3 ? 5 : 3.5) : (type === 'golem' ? 2.8 : type === 'wolf' ? 1.2 : 1.5);
     fitModel(mesh, h);
+    // Each monster gets its own materials so hit-flash does not affect every clone.
+    mesh.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      obj.material = Array.isArray(obj.material) ? obj.material.map(m => m.clone()) : obj.material.clone();
+    });
   } catch {
     const geo = new THREE.BoxGeometry(1.2, 1.5, 1.2);
     const mat = new THREE.MeshStandardMaterial({ color: isBoss ? 0xaa2222 : 0x44aa44 });
@@ -483,23 +597,25 @@ async function createMonster(type, x, z, isBoss = false) {
   barFill.position.z = 0.01;
   barBg.add(barFill);
 
+  const level = monsterLevelForAct(state.currentAct, isBoss);
   const baseHp = isBoss
-    ? 500 * state.currentAct * state.currentAct
-    : 30 + state.player.level * 8 + (type === 'golem' ? 40 : 0);
+    ? 650 + level * (state.currentAct === 3 ? 18 : 14)
+    : 42 + level * 9 + (type === 'golem' ? 80 : 0);
   const atk = isBoss
-    ? 15 + state.currentAct * 12
-    : 6 + Math.floor(state.player.level * 0.8);
+    ? 12 + Math.floor(level * 0.42)
+    : 5 + Math.floor(level * 0.34);
 
   return {
     mesh,
     type,
+    level,
     isBoss,
     isRanged: type === 'archer' || (isBoss && state.currentAct === 2),
     hp: baseHp,
     maxHp: baseHp,
     atk,
-    speed: isBoss ? 3.5 : (type === 'wolf' ? 5 : 3),
-    cooldown: 0,
+    speed: isBoss ? 3.2 : (type === 'wolf' ? 5 : 3),
+    cooldown: Math.random() * 0.5,
     barFill,
     barBg,
     phase: 1
@@ -525,6 +641,7 @@ async function spawnBossPortal(actNum) {
   const light = new THREE.PointLight(0x8844ff, 1.5, 15);
   light.position.copy(portal.position);
   scene.add(light);
+  portal.userData.light = light;
 }
 
 // ===================== COMBAT & SYSTEMS =====================
@@ -541,7 +658,6 @@ function onClickAttack(e) {
   const hits = raycaster.intersectObjects(targets, true);
   if (hits.length === 0) return;
 
-  // find which monster
   let mon = null;
   for (const h of hits) {
     let obj = h.object;
@@ -552,88 +668,135 @@ function onClickAttack(e) {
   if (!mon || mon.hp <= 0) return;
 
   const dist = playerGroup.position.distanceTo(mon.mesh.position);
-  if (dist > 4.5) return; // melee range
+  if (dist > 4.5) return;
 
   attackCooldown = 0.45;
   const dmg = state.player.attack + Math.floor(Math.random() * 8);
   mon.hp -= dmg;
+  flashMonster(mon);
+  applyKnockback(mon, 1.15);
   showDamage(mon.mesh.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
 
-  // update bar
   const pct = Math.max(0, mon.hp / mon.maxHp);
   mon.barFill.scale.x = pct;
   mon.barFill.position.x = -0.575 * (1 - pct);
 
-  if (mon.hp <= 0) {
-    onMonsterDeath(mon);
-  }
+  if (mon.hp <= 0) onMonsterDeath(mon);
 }
 
-function onMonsterDeath(mon) {
-  const xpGain = mon.isBoss
-    ? 200 * state.currentAct * state.currentAct
-    : 15 + state.player.level * 3 + Math.floor(Math.random() * 10);
-  const goldGain = mon.isBoss
-    ? 150 * state.currentAct
-    : 5 + Math.floor(Math.random() * 12);
+function awardMonsterRewards(mon) {
+  const playerLevel = Math.max(1, state.player.level);
+  const ratio = THREE.MathUtils.clamp(mon.level / playerLevel, 0.25, 1.6);
+  const baseXp = mon.isBoss ? 600 + mon.level * 35 : 45 + mon.level * 14;
+  const xpGain = Math.max(1, Math.round(baseXp * ratio));
+  const goldGain = mon.isBoss ? 100 + mon.level * 10 : 5 + mon.level * 5;
 
-  state.player.xp += xpGain;
+  if (state.player.level < MAX_LEVEL) state.player.xp += xpGain;
   state.player.gold += goldGain;
   showDamage(mon.mesh.position.clone().add(new THREE.Vector3(0, 2.5, 0)), xpGain, 'xp');
+  showDamage(mon.mesh.position.clone().add(new THREE.Vector3(0.7, 2.2, 0)), goldGain, 'gold');
 
-  // level up loop
-  while (state.player.xp >= state.player.xpToNext) {
+  const startLevel = state.player.level;
+  while (state.player.level < MAX_LEVEL && state.player.xp >= state.player.xpToNext) {
     state.player.xp -= state.player.xpToNext;
     state.player.level++;
-    state.player.xpToNext = xpForLevel(state.player.level);
     state.player.maxHp = 100 + (state.player.level - 1) * 12;
     state.player.hp = state.player.maxHp;
     state.player.attack = WEAPONS[state.player.weaponIdx].atk + Math.floor((state.player.level - 1) * 1.5);
-    showOverlay('Level Up!', `You reached level ${state.player.level}!`, () => {});
+    if (state.player.level >= MAX_LEVEL) {
+      state.player.level = MAX_LEVEL;
+      state.player.xp = 0;
+      state.player.xpToNext = 0;
+      break;
+    }
+    state.player.xpToNext = xpForLevel(state.player.level);
   }
+  if (state.player.level > startLevel && !mon.isBoss) {
+    if (state.player.level >= MAX_LEVEL) showOverlay('Maximum Level!', `You reached the level cap: ${MAX_LEVEL}.`, () => {});
+    else showOverlay('Level Up!', `You reached level ${state.player.level}!`, () => {});
+  }
+}
 
-  if (mon.isBoss) {
-    if (state.currentAct === 1) state.flags.act1BossDefeated = true;
-    if (state.currentAct === 2) state.flags.act2BossDefeated = true;
-    if (state.currentAct === 3) state.flags.act3BossDefeated = true;
-    state.inBossRoom = false;
-    showOverlay('Boss Defeated!', `Act ${state.currentAct} boss has fallen. The path forward opens.`, () => {
-      if (state.currentAct < 3) {
-        state.currentAct++;
-        state.player.act = state.currentAct;
-        rebuildWorld();
-      } else {
-        showOverlay('Victory!', 'You have completed all three Acts. Free roam unlocked.', () => {});
-      }
-    });
-  }
+function scheduleMonsterRespawn(mon) {
+  if (mon.isBoss || state.inBossRoom) return;
+  const generation = worldGeneration;
+  const actAtDeath = state.currentAct;
+  const type = mon.type;
+  const delay = MONSTER_RESPAWN_MIN_MS + Math.random() * (MONSTER_RESPAWN_MAX_MS - MONSTER_RESPAWN_MIN_MS);
+  setTimeout(async () => {
+    if (generation !== worldGeneration || state.currentAct !== actAtDeath || state.inBossRoom) return;
+    const angle = Math.random() * Math.PI * 2;
+    const r = 22 + Math.random() * 48;
+    const respawned = await createMonster(type, Math.cos(angle) * r, Math.sin(angle) * r, false);
+    if (generation === worldGeneration && state.currentAct === actAtDeath && !state.inBossRoom) monsters.push(respawned);
+    else scene.remove(respawned.mesh);
+  }, delay);
+}
+
+function onMonsterDeath(mon) {
+  awardMonsterRewards(mon);
+  const wasBoss = mon.isBoss;
+  const defeatedAct = state.currentAct;
 
   scene.remove(mon.mesh);
   monsters = monsters.filter(m => m !== mon);
+
+  if (!wasBoss) {
+    scheduleMonsterRespawn(mon);
+    updateHUD();
+    saveGame();
+    return;
+  }
+
+  state.flags[`act${defeatedAct}BossDefeated`] = true;
+  state.inBossRoom = false;
+  clearProjectiles();
+  clearBossArena();
+
+  showOverlay('Boss Defeated!', `Act ${defeatedAct} boss has fallen. The path forward opens.`, async () => {
+    if (defeatedAct < 3) {
+      state.currentAct = defeatedAct + 1;
+      state.player.act = state.currentAct;
+      state.freeRoam = false;
+      await rebuildWorld();
+      saveGame();
+    } else {
+      state.freeRoam = true;
+      state.currentAct = 3;
+      state.player.act = 3;
+      await rebuildWorld();
+      saveGame();
+      showOverlay('Victory!', `All three Acts are complete. Free roam is unlocked; keep fighting and level up to ${MAX_LEVEL}.`, () => {});
+    }
+  });
+
   updateHUD();
-  saveGame();
 }
 
 function onPlayerDeath() {
+  if (state.isDead) return;
   state.isDead = true;
-  state.player.gold = Math.floor(state.player.gold * 0.5);
+  const lost = Math.floor(state.player.gold * DEATH_GOLD_LOSS_FRACTION);
+  state.player.gold = Math.max(0, state.player.gold - lost);
   state.player.hp = state.player.maxHp;
-  showOverlay('You Died', 'Half your gold was lost. Returning to town...', () => {
+  clearProjectiles();
+  showOverlay('You Died', `You lost ${lost} gold (10%). Returning to town...`, async () => {
     state.isDead = false;
-    playerGroup.position.set(0, 0, 4);
     if (state.inBossRoom) {
       state.inBossRoom = false;
-      rebuildWorld();
+      clearBossArena();
+      await rebuildWorld();
     }
+    playerGroup.position.set(0, 0, 4);
     updateHUD();
     saveGame();
   });
 }
 
 function usePotion() {
-  if (state.player.potions <= 0 || state.player.hp >= state.player.maxHp) return;
+  if (!playerGroup || state.player.potions <= 0 || state.player.hp >= state.player.maxHp || state.isDead) return;
   state.player.potions--;
-  const heal = Math.floor(state.player.maxHp * 0.4);
+  const heal = Math.floor(state.player.maxHp * POTION_HEAL_FRACTION);
   state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
   showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), heal, 'heal');
   updateHUD();
@@ -684,7 +847,7 @@ function openNPC(npc) {
   } else if (npc.type === 'potion') {
     const row = document.createElement('div');
     row.className = 'shop-item';
-    row.innerHTML = `<div><strong>Health Potion</strong><br><small>Restores 40% HP · 25g</small></div>`;
+    row.innerHTML = `<div><strong>Health Potion</strong><br><small>Restores 50% HP · 25g</small></div>`;
     const btn = document.createElement('button');
     btn.textContent = 'Buy';
     btn.disabled = state.player.gold < 25 || state.player.potions >= 10;
@@ -721,8 +884,71 @@ function closeModal() {
   modal.classList.add('hidden');
 }
 
+function clearProjectiles() {
+  projectiles.forEach(p => scene.remove(p.mesh));
+  projectiles = [];
+}
+
+function clearBossArena() {
+  if (bossArenaGroup) {
+    scene.remove(bossArenaGroup);
+    bossArenaGroup = null;
+  }
+  if (envGroup) envGroup.visible = true;
+  npcs.forEach(n => { n.mesh.visible = true; });
+  portals.forEach(p => {
+    p.visible = true;
+    if (p.userData.light) p.userData.light.visible = true;
+  });
+}
+
+function createBossArena(actNum) {
+  clearBossArena();
+  bossArenaGroup = new THREE.Group();
+  const palette = {
+    1: { floor: 0x365b2c, wall: 0x6c7f52, glow: 0xffc857 },
+    2: { floor: 0x101a12, wall: 0x253426, glow: 0x8b5cf6 },
+    3: { floor: 0x303035, wall: 0x595963, glow: 0xff5a36 }
+  }[actNum];
+
+  const floor = new THREE.Mesh(
+    new THREE.CylinderGeometry(19, 19, 0.8, 40),
+    new THREE.MeshStandardMaterial({ color: palette.floor, roughness: 0.9 })
+  );
+  floor.position.y = -0.4;
+  floor.receiveShadow = true;
+  bossArenaGroup.add(floor);
+
+  const wallMat = new THREE.MeshStandardMaterial({ color: palette.wall, roughness: 0.8 });
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(2.5, 5, 2.5), wallMat);
+    pillar.position.set(Math.cos(a) * 18.2, 2.2, Math.sin(a) * 18.2);
+    pillar.rotation.y = -a;
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    bossArenaGroup.add(pillar);
+  }
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(15.5, 0.18, 8, 64),
+    new THREE.MeshStandardMaterial({ color: palette.glow, emissive: palette.glow, emissiveIntensity: 0.9 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.04;
+  bossArenaGroup.add(ring);
+
+  scene.add(bossArenaGroup);
+  envGroup.visible = false;
+  npcs.forEach(n => { n.mesh.visible = false; });
+  portals.forEach(p => {
+    p.visible = false;
+    if (p.userData.light) p.userData.light.visible = false;
+  });
+}
+
 async function tryEnterPortal() {
-  if (!playerGroup || state.inBossRoom) return;
+  if (!playerGroup || state.inBossRoom || state.freeRoam) return;
   for (const p of portals) {
     if (p.userData.isPortal && playerGroup.position.distanceTo(p.position) < 5) {
       const req = ACT[state.currentAct].bossReq;
@@ -730,15 +956,18 @@ async function tryEnterPortal() {
         showOverlay('Too Weak', `You need level ${req} to challenge this boss. (Recommended ${ACT[state.currentAct].recommended})`, () => {});
         return;
       }
-      // Enter boss room
+
       state.inBossRoom = true;
+      worldGeneration++;
       monsters.forEach(m => scene.remove(m.mesh));
       monsters = [];
-      playerGroup.position.set(0, 0, 8);
+      clearProjectiles();
+      createBossArena(state.currentAct);
+      playerGroup.position.set(0, 0, 12);
 
       const boss = await createMonster('boss', 0, -10, true);
       monsters.push(boss);
-      showOverlay('Boss Room', `Defeat the Act ${state.currentAct} boss!`, () => {});
+      showOverlay(`Act ${state.currentAct} Boss Room`, `The arena is sealed. Defeat the boss to continue.`, () => {});
       return;
     }
   }
@@ -746,7 +975,7 @@ async function tryEnterPortal() {
 
 async function rebuildWorld() {
   loading.classList.remove('hidden');
-  $('loading-text').textContent = `Entering ${ACT[state.currentAct].name}...`;
+  $('loading-text').textContent = state.freeRoam ? 'Opening free roam...' : `Entering ${ACT[state.currentAct].name}...`;
   await buildAct(state.currentAct);
   playerGroup.position.set(0, 0, 4);
   loading.classList.add('hidden');
@@ -758,14 +987,33 @@ function drawMinimap() {
   if (!minimapCtx || !playerGroup) return;
   const ctx = minimapCtx;
   const s = 160;
-  ctx.fillStyle = '#0a1a0a';
-  ctx.fillRect(0, 0, s, s);
-
   const scale = 1.2;
   const cx = s / 2;
   const cy = s / 2;
 
-  // monsters
+  ctx.fillStyle = state.inBossRoom ? '#16111d' : '#0a1a0a';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeRect(5, 5, s - 10, s - 10);
+
+  if (state.inBossRoom) {
+    ctx.strokeStyle = '#c9a227';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 55, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    // Town / NPC markers.
+    npcs.forEach(n => {
+      const dx = (n.mesh.position.x - playerGroup.position.x) * scale;
+      const dz = (n.mesh.position.z - playerGroup.position.z) * scale;
+      if (Math.abs(dx) < 74 && Math.abs(dz) < 74) {
+        ctx.fillStyle = n.type === 'inn' ? '#f0d060' : n.type === 'shop' ? '#e67e22' : '#2ecc71';
+        ctx.fillRect(cx + dx - 2.5, cy + dz - 2.5, 5, 5);
+      }
+    });
+  }
+
   ctx.fillStyle = '#e74c3c';
   monsters.forEach(m => {
     if (m.hp <= 0) return;
@@ -778,21 +1026,83 @@ function drawMinimap() {
     }
   });
 
-  // portal
-  ctx.fillStyle = '#8844ff';
-  portals.forEach(p => {
-    const dx = (p.position.x - playerGroup.position.x) * scale;
-    const dz = (p.position.z - playerGroup.position.z) * scale;
-    ctx.beginPath();
-    ctx.arc(cx + dx, cy + dz, 4, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  if (!state.inBossRoom) {
+    ctx.fillStyle = '#8844ff';
+    portals.forEach(p => {
+      const dx = (p.position.x - playerGroup.position.x) * scale;
+      const dz = (p.position.z - playerGroup.position.z) * scale;
+      if (Math.abs(dx) < 74 && Math.abs(dz) < 74) {
+        ctx.beginPath();
+        ctx.arc(cx + dx, cy + dz, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
 
-  // player
+  // Player + facing direction arrow.
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-playerGroup.rotation.y);
   ctx.fillStyle = '#3498db';
   ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.moveTo(0, -8);
+  ctx.lineTo(5.5, 6);
+  ctx.lineTo(0, 3.5);
+  ctx.lineTo(-5.5, 6);
+  ctx.closePath();
   ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#ddd';
+  ctx.font = '9px sans-serif';
+  ctx.fillText('N', 77, 12);
+}
+
+function spawnProjectile(mon) {
+  if (!playerGroup || mon.hp <= 0) return;
+  const start = mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2.2 : 1.3, 0));
+  const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+  const dir = target.sub(start).normalize();
+  const isBossShot = mon.isBoss;
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(isBossShot ? 0.38 : 0.22, 10, 10),
+    new THREE.MeshStandardMaterial({
+      color: isBossShot ? 0xff5722 : 0xd7ecff,
+      emissive: isBossShot ? 0xaa2200 : 0x446688,
+      emissiveIntensity: 1.1
+    })
+  );
+  mesh.position.copy(start);
+  scene.add(mesh);
+  projectiles.push({
+    mesh,
+    velocity: dir.multiplyScalar(isBossShot ? 12 : 10),
+    damage: mon.atk + Math.floor(Math.random() * 6),
+    life: 4,
+    owner: mon
+  });
+}
+
+function updateProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= dt;
+    p.mesh.position.addScaledVector(p.velocity, dt);
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      projectiles.splice(i, 1);
+      continue;
+    }
+    const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1, 0));
+    if (p.mesh.position.distanceTo(target) < 0.85) {
+      state.player.hp = Math.max(0, state.player.hp - p.damage);
+      showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), p.damage);
+      scene.remove(p.mesh);
+      projectiles.splice(i, 1);
+      updateHUD();
+      if (state.player.hp <= 0) onPlayerDeath();
+    }
+  }
 }
 
 // ===================== LOOP =====================
@@ -811,16 +1121,27 @@ function animate() {
   const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   const move = new THREE.Vector3();
-  if (keys['KeyW']) move.add(forward);
-  if (keys['KeyS']) move.sub(forward);
-  if (keys['KeyA']) move.sub(right);
-  if (keys['KeyD']) move.add(right);
+  if (keys['KeyW'] || keys['ArrowUp']) move.add(forward);
+  if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
+  if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
+  if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
   if (move.length() > 0) {
     move.normalize().multiplyScalar(speed * dt);
     playerGroup.position.add(move);
     // face movement
     const targetAngle = Math.atan2(move.x, move.z);
     playerGroup.rotation.y = THREE.MathUtils.lerp(playerGroup.rotation.y, targetAngle + Math.PI, 0.15);
+  }
+
+  // Keep the player inside the sealed boss arena.
+  if (state.inBossRoom) {
+    const flat = new THREE.Vector2(playerGroup.position.x, playerGroup.position.z);
+    const maxRadius = 16.2;
+    if (flat.length() > maxRadius) {
+      flat.setLength(maxRadius);
+      playerGroup.position.x = flat.x;
+      playerGroup.position.z = flat.y;
+    }
   }
 
   // Camera
@@ -831,42 +1152,51 @@ function animate() {
 
   // Monster AI
   monsters.forEach(mon => {
-    if (mon.hp <= 0) return;
+    if (mon.hp <= 0 || state.isDead) return;
     mon.cooldown = Math.max(0, mon.cooldown - dt);
     mon.barBg.lookAt(camera.position);
 
     const dist = mon.mesh.position.distanceTo(playerGroup.position);
-    const aggro = mon.isBoss ? 40 : 18;
+    const aggro = mon.isBoss ? 45 : 24;
+    if (dist >= aggro) return;
 
-    if (dist < aggro) {
-      const dir = playerGroup.position.clone().sub(mon.mesh.position);
-      dir.y = 0;
-      dir.normalize();
-      mon.mesh.position.addScaledVector(dir, mon.speed * dt);
-      mon.mesh.lookAt(playerGroup.position.x, mon.mesh.position.y, playerGroup.position.z);
+    const dir = playerGroup.position.clone().sub(mon.mesh.position);
+    dir.y = 0;
+    if (dir.lengthSq() > 0.0001) dir.normalize();
+    mon.mesh.lookAt(playerGroup.position.x, mon.mesh.position.y, playerGroup.position.z);
 
-      const range = mon.isRanged ? 14 : 2.8;
-      if (dist < range && mon.cooldown <= 0) {
-        mon.cooldown = mon.isRanged ? 1.6 : 1.0;
-        let dmg = mon.atk + Math.floor(Math.random() * 6);
-        // Act 3 boss phases
-        if (mon.isBoss && state.currentAct === 3) {
-          const hpPct = mon.hp / mon.maxHp;
-          if (hpPct < 0.33) mon.phase = 3;
-          else if (hpPct < 0.66) mon.phase = 2;
-          if (mon.phase === 2) dmg = Math.floor(dmg * 1.3);
-          if (mon.phase === 3) dmg = Math.floor(dmg * 1.6);
-        }
-        state.player.hp -= dmg;
-        showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
-        updateHUD();
-        if (state.player.hp <= 0) {
-          state.player.hp = 0;
-          onPlayerDeath();
-        }
+    if (mon.isRanged) {
+      // Ranged enemies keep some distance and fire actual projectiles.
+      const preferred = mon.isBoss ? 13 : 10;
+      if (dist > preferred + 2) mon.mesh.position.addScaledVector(dir, mon.speed * 0.7 * dt);
+      else if (dist < preferred - 3) mon.mesh.position.addScaledVector(dir, -mon.speed * 0.55 * dt);
+      if (dist < 18 && mon.cooldown <= 0) {
+        mon.cooldown = mon.isBoss ? 1.15 : 1.65;
+        spawnProjectile(mon);
       }
+      return;
+    }
+
+    if (dist > 2.5) mon.mesh.position.addScaledVector(dir, mon.speed * dt);
+    if (dist < 2.8 && mon.cooldown <= 0) {
+      mon.cooldown = mon.isBoss ? 0.85 : 1.0;
+      let dmg = mon.atk + Math.floor(Math.random() * 6);
+      if (mon.isBoss && state.currentAct === 3) {
+        const hpPct = mon.hp / mon.maxHp;
+        mon.phase = hpPct < 0.33 ? 3 : hpPct < 0.66 ? 2 : 1;
+        if (mon.phase === 2) dmg = Math.floor(dmg * 1.25);
+        if (mon.phase === 3) dmg = Math.floor(dmg * 1.5);
+      }
+      state.player.hp = Math.max(0, state.player.hp - dmg);
+      showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
+      const push = playerGroup.position.clone().sub(mon.mesh.position).setY(0).normalize();
+      playerGroup.position.addScaledVector(push, mon.isBoss ? 1.2 : 0.55);
+      updateHUD();
+      if (state.player.hp <= 0) onPlayerDeath();
     }
   });
+
+  updateProjectiles(dt);
 
   // Context prompt
   let prompt = '';
@@ -876,7 +1206,7 @@ function animate() {
       break;
     }
   }
-  if (!prompt) {
+  if (!prompt && !state.freeRoam) {
     for (const p of portals) {
       if (playerGroup.position.distanceTo(p.position) < 5) {
         prompt = 'Press E — Enter Boss Room';
@@ -922,6 +1252,7 @@ function init() {
   $('modal-close').addEventListener('click', closeModal);
 
   window.addEventListener('keydown', e => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     keys[e.code] = true;
     if (e.code === 'KeyH') usePotion();
     if (e.code === 'KeyT') tryInteract();
@@ -945,9 +1276,14 @@ async function startGame(fromSave) {
   loading.classList.remove('hidden');
   $('loading-text').textContent = 'Loading models...';
 
+  clampPlayerProgression();
   await setupThree();
   await buildAct(state.currentAct);
   await spawnPlayer();
+  if (fromSave && state.savedPosition) {
+    const pos = state.savedPosition;
+    playerGroup.position.set(Number(pos.x) || 0, Number(pos.y) || 0, Number(pos.z) || 4);
+  }
   updateHUD();
   hud.classList.remove('hidden');
   loading.classList.add('hidden');
