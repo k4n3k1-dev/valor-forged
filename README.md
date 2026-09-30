@@ -17,8 +17,15 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 | Floating damage / XP / gold numbers + HP bars | ✅ |
 | Melee chase AI + projectile-based ranged enemies | ✅ |
 | Enemy respawning for continued progression | ✅ |
-| 3 Acts with themed environments and enemies | ✅ |
+| 3 Acts with distinct environments and gameplay | ✅ |
 | Sealed boss arenas with level requirements (40 / 120 / 200) | ✅ |
+| Act 1 telegraphed straight-line charge boss | ✅ |
+| Act 2 homing-fireball boss + tree cover / line-of-sight | ✅ |
+| Act 3 Charge → Shoot → Ground Slam boss phases | ✅ |
+| Act 3 citadel, bridges, void and falling mechanic | ✅ |
+| Environment collision (trees / rocks / buildings / ruins) | ✅ |
+| Portal hint signs | ✅ |
+| Model/procedural character and enemy animation handling | ✅ |
 | Rebalanced XP / level progression | ✅ |
 | Level-scaled gold rewards + Weapon & Potion shops | ✅ |
 | Health potions restore 50% HP (max 10) | ✅ |
@@ -28,9 +35,9 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 | Start screen (username + gender) | ✅ |
 | Post-game free roam with recurring enemies | ✅ |
 | Hard level cap: 299 | ✅ |
-| Credits screen with currently identifiable bundled assets | ✅ / attribution details pending |
-| Full unique boss attack patterns from the concept | 🚧 Further polish |
-| Music / sound effects | 🚧 Not added yet |
+| Credits screen + CREDITS.md with verified embedded asset metadata | ✅ / some environment attribution still pending |
+| Automated gameplay-logic tests | ✅ |
+| Music / sound effects / audio ambience | 🚧 Intentionally left for later |
 
 ---
 
@@ -82,7 +89,7 @@ All third-party libraries, 3D models, textures and audio will be:
 1. Selected by the developer
 2. Fully credited inside the in-game **Credits** screen (with URLs + licenses)
 
-The current build already contains bundled GLB models for the player, monsters, bosses, NPCs, buildings and environment. Exact creator/source/license metadata still needs to be completed per asset before final submission.
+The current build includes `CREDITS.md`, generated from author/source/license metadata embedded in the bundled GLB files. Some environment assets do not contain embedded attribution metadata, so those source details still need to be added manually before final submission.
 
 **Libraries in use**
 - Three.js (MIT)
@@ -110,10 +117,11 @@ Live URL will be:
 2. Click-attack + one slime (done)
 3. Inn save + Shop UI (done)
 4. Mini-map (done)
-5. Act 1 Boss charge mechanic
-6. Act 2 forest + cover
-7. Act 3 bridges + 3-phase boss
-8. Polish, potions, death, Credits, balance
+5. Act 1 Boss charge mechanic (done)
+6. Act 2 forest + cover (done)
+7. Act 3 bridges + 3-phase boss (done)
+8. Gameplay polish, collision, tests and Credits (done)
+9. Audio polish — music / sound effects (left for later)
 
 ---
 
@@ -128,4 +136,4 @@ After building (`npm run build`) simply upload the contents of the `dist/` folde
 
 MIT — feel free to fork, extend and credit the original concept.
 
-**Valor Forged** — Concept fully fleshed out. Ready for continued development.
+**Valor Forged** — Core gameplay and all three Acts are implemented. Audio polish remains for the later finishing pass.

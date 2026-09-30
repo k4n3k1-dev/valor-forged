@@ -1,29 +1,45 @@
-# Valor Forged — Gameplay Update
+# Valor Forged — Full Gameplay / Acts Update
 
-This build updates the existing project without replacing its overall structure.
+This build finishes the remaining non-audio gameplay work from the current concept while keeping the existing project structure.
 
-## Implemented
+## Implemented in this build
 
-- WASD **and Arrow-key** movement.
-- White **hit flash** on damaged monsters.
-- **Knockback** for player melee attacks; enemies can also push the player slightly on contact.
-- Real **ranged projectiles** for archers and the Act 2 ranged boss.
-- Rebalanced **XP / levelling** with level-relative XP rewards and reachable 40 / 120 / 200 gates.
-- Normal monsters **respawn** after a short delay so progression and free roam do not run out of enemies.
-- Level-scaled **gold** rewards using `base + monsterLevel * 5` for regular enemies.
-- Potions now restore **50% HP**.
-- Simple `localStorage` **save/load**, including player position, Act, boss flags and free-roam state. Older saves are migrated when possible.
-- Death penalty corrected to **10% of current gold**.
-- Proper sealed **boss arenas** with themed floors, boundary pillars and arena minimap presentation.
-- Improved **minimap**: player facing arrow, enemy/boss dots, NPC/town markers, portal marker and boss-arena ring.
-- Act 3 victory now enters functioning **free roam** with respawning enemies.
-- Hard **level cap 299** with `MAX` shown on the XP bar.
-- Credits screen expanded with the assets/libraries currently identifiable from this repository; exact per-asset URLs/licenses still need to be completed by the developer.
-- Bundled model paths made relative so they work more reliably under GitHub Pages subpaths.
+- Act 1 boss now uses a telegraphed straight-line **charge** with recovery windows.
+- Act 2 boss now fires **homing fireballs**.
+- Act 2 boss arena now contains physical **tree cover**; trees block player movement, line of sight and projectiles.
+- Normal Act 2 ranged enemies respect cover and fire visible projectiles.
+- Act 3 is now a proper **Highland Citadel** layout with stone platforms, ruined walls, towers, narrow bridges and a void below.
+- Walking off Act 3 platforms/bridges triggers a **falling / void penalty** and returns the player to safety.
+- Act 3 boss now has three real phases: **Charge → Projectile Barrage → Ground Slam**.
+- World collision added for trees, rocks, buildings, ruins and boss-room cover.
+- Portal-area **hint signs** added for all three Acts.
+- Existing model animation clips are now used where available; player and non-animated enemies/bosses receive procedural movement/attack feedback.
+- Animated monster variants are used for Slime, Wolf, Spider, Archer and Golem where bundled assets support them.
+- Mini-map now also sketches the Act 3 citadel platforms / bridges.
+- Added a reusable gameplay-logic module and a real Node test suite covering XP, rewards, death penalty, potions, level cap and boss gates.
+- `npm test` now runs the automated test suite instead of a placeholder command.
+- Added `CREDITS.md` with author, license and source URLs extracted directly from embedded GLB metadata where available.
+- In-game Credits expanded with verified authors/licenses for the assets currently used by the game.
+- Main module path is relative for safer deployment under GitHub Pages subpaths.
 
-## Still intentionally left for later
+## Previous gameplay updates retained
 
-- Full per-asset credit URLs and license details.
-- Music and sound effects.
-- The more elaborate unique boss attack patterns from the original concept (charge / homing-cover / full charge-shoot-slam state machine).
-- Additional animation/polish.
+- WASD and Arrow-key movement.
+- Hit flash and knockback.
+- Ranged enemy projectiles.
+- Rebalanced XP / levelling and level-relative XP rewards.
+- Enemy respawning.
+- Level-scaled gold rewards.
+- Potions restore 50% HP.
+- Simple localStorage save/load with position, Act, boss flags and free-roam state.
+- Death penalty of 10% gold.
+- Sealed boss rooms.
+- Improved minimap.
+- Functional free roam after Act 3.
+- Hard level cap of 299.
+
+## Intentionally left for later
+
+- Music.
+- Sound effects / ambience / voice / other audio polish.
+- Manual attribution for environment models whose GLB files do not contain embedded source/author/license metadata.

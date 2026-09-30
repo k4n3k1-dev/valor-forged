@@ -5,6 +5,18 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import {
+  MAX_LEVEL,
+  POTION_HEAL_FRACTION,
+  DEATH_GOLD_LOSS_FRACTION,
+  xpForLevel,
+  calculateRewards,
+  applyDeathPenalty,
+  potionHealAmount,
+  clampLevel,
+  canEnterBoss
+} from './gameLogic.js';
 
 // ===================== CONSTANTS =====================
 const ACT = {
@@ -51,9 +63,6 @@ const WEAPONS = [
   { name: 'Mythril Greatsword', atk: 220, price: 7000, req: 180 }
 ];
 
-const MAX_LEVEL = 299;
-const POTION_HEAL_FRACTION = 0.5;
-const DEATH_GOLD_LOSS_FRACTION = 0.10;
 const MONSTER_RESPAWN_MIN_MS = 2500;
 const MONSTER_RESPAWN_MAX_MS = 5000;
 
@@ -65,9 +74,9 @@ const MODEL_PATHS = {
   monsters: {
     slime: 'models/monsters/slime/slime_animated.glb',
     wolf: 'models/monsters/wolf/wolf.glb',
-    spider: 'models/monsters/spider/spider_rigged.glb',
-    archer: 'models/monsters/archer/archer_stylized.glb',
-    golem: 'models/monsters/golem/stone_golem.glb'
+    spider: 'models/monsters/spider/spider_detailed.glb',
+    archer: 'models/monsters/archer/archer_goblin.glb',
+    golem: 'models/monsters/golem/rock_golem.glb'
   },
   bosses: {
     1: 'models/bosses/act1_boss.glb',
@@ -134,8 +143,16 @@ let attackCooldown = 0;
 let minimapCtx;
 let loader = new GLTFLoader();
 let modelCache = {};
+let modelAnimations = {};
 let mixers = [];
 let townCenter = new THREE.Vector3(0, 0, 0);
+let worldColliders = [];
+let coverColliders = [];
+let bossCoverColliders = [];
+let act3SafeZones = [];
+let playerAttackAnimTimer = 0;
+let playerVisualTime = 0;
+let fallCooldown = 0;
 
 // ===================== DOM =====================
 const $ = id => document.getElementById(id);
@@ -148,15 +165,9 @@ const overlay = $('overlay');
 const contextPrompt = $('context-prompt');
 
 // ===================== UTILS =====================
-function xpForLevel(lv) {
-  if (lv >= MAX_LEVEL) return 0;
-  const n = Math.max(0, lv - 1);
-  return Math.floor(100 + n * 22 + Math.pow(n, 1.12) * 4);
-}
-
 function clampPlayerProgression() {
   const p = state.player;
-  p.level = THREE.MathUtils.clamp(Math.floor(p.level || 1), 1, MAX_LEVEL);
+  p.level = clampLevel(p.level);
   p.maxHp = 100 + (p.level - 1) * 12;
   p.hp = THREE.MathUtils.clamp(Number(p.hp) || p.maxHp, 0, p.maxHp);
   p.weaponIdx = THREE.MathUtils.clamp(Math.floor(p.weaponIdx || 0), 0, WEAPONS.length - 1);
@@ -281,7 +292,7 @@ function saveGame() {
     flags: { ...state.flags },
     currentAct: state.currentAct,
     freeRoam: state.freeRoam,
-    position: playerGroup ? {
+    position: playerGroup && !state.falling ? {
       x: playerGroup.position.x,
       y: playerGroup.position.y,
       z: playerGroup.position.z
@@ -317,31 +328,81 @@ function loadGame() {
 
 // ===================== MODEL LOADING =====================
 function loadModel(path) {
-  if (modelCache[path]) return Promise.resolve(modelCache[path].clone());
-  return new Promise((resolve, reject) => {
+  if (modelCache[path]) {
+    try { return Promise.resolve(cloneSkeleton(modelCache[path])); }
+    catch { return Promise.resolve(modelCache[path].clone(true)); }
+  }
+  return new Promise((resolve) => {
     loader.load(
       path,
       gltf => {
         modelCache[path] = gltf.scene;
-        // enable shadows
+        modelAnimations[path] = gltf.animations || [];
         gltf.scene.traverse(c => {
           if (c.isMesh) {
             c.castShadow = true;
             c.receiveShadow = true;
           }
         });
-        resolve(gltf.scene.clone());
+        try { resolve(cloneSkeleton(gltf.scene)); }
+        catch { resolve(gltf.scene.clone(true)); }
       },
       undefined,
       err => {
         console.warn('Failed to load', path, err);
-        // fallback box
         const geo = new THREE.BoxGeometry(1, 1.5, 1);
         const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
         resolve(new THREE.Mesh(geo, mat));
       }
     );
   });
+}
+
+function createAnimationController(model, path) {
+  const clips = modelAnimations[path] || [];
+  if (!clips.length) return null;
+  const mixer = new THREE.AnimationMixer(model);
+  const actions = {};
+  clips.forEach(clip => {
+    actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
+  });
+  const controller = { mixer, actions, current: null, path };
+  mixers.push(controller);
+  return controller;
+}
+
+function findAnimationAction(controller, stateName) {
+  if (!controller) return null;
+  const preferences = {
+    idle: ['idle', 'squish', 'loop'],
+    walk: ['walk', 'walking', 'jump'],
+    attack: ['attack', 'keyaction'],
+    hit: ['gethit', 'damage'],
+    death: ['death', 'die']
+  }[stateName] || [stateName];
+  const entries = Object.entries(controller.actions);
+  for (const key of preferences) {
+    const found = entries.find(([name]) => name.includes(key));
+    if (found) return found[1];
+  }
+  return entries.length ? entries[0][1] : null;
+}
+
+function playAnimation(controller, stateName, once = false) {
+  if (!controller || controller.current === stateName) return;
+  const next = findAnimationAction(controller, stateName);
+  if (!next) return;
+  Object.values(controller.actions).forEach(action => action.fadeOut(0.08));
+  next.reset().fadeIn(0.08);
+  if (once) {
+    next.setLoop(THREE.LoopOnce, 1);
+    next.clampWhenFinished = true;
+  } else {
+    next.setLoop(THREE.LoopRepeat, Infinity);
+    next.clampWhenFinished = false;
+  }
+  next.play();
+  controller.current = stateName;
 }
 
 function fitModel(model, targetHeight = 1.8) {
@@ -353,6 +414,265 @@ function fitModel(model, targetHeight = 1.8) {
   box.setFromObject(model);
   model.position.y = -box.min.y;
   return model;
+}
+
+
+function addWorldCollider(x, z, radius, height = 6, type = 'solid') {
+  const collider = { shape: 'circle', x, z, radius, height, type };
+  worldColliders.push(collider);
+  if (type === 'cover') coverColliders.push(collider);
+  return collider;
+}
+
+function addBoxCollider(x, z, width, depth, height = 6, type = 'solid') {
+  const collider = { shape: 'box', x, z, halfW: width / 2, halfD: depth / 2, height, type };
+  worldColliders.push(collider);
+  if (type === 'cover') coverColliders.push(collider);
+  return collider;
+}
+
+function activeSolidColliders() {
+  return state.inBossRoom ? bossCoverColliders : worldColliders;
+}
+
+function activeCoverColliders() {
+  return state.inBossRoom ? bossCoverColliders : coverColliders;
+}
+
+function collidesAt(position, radius = 0.55, colliders = activeSolidColliders()) {
+  for (const c of colliders) {
+    const dx = position.x - c.x;
+    const dz = position.z - c.z;
+    if (c.shape === 'box') {
+      if (Math.abs(dx) < c.halfW + radius && Math.abs(dz) < c.halfD + radius) return true;
+    } else if (dx * dx + dz * dz < Math.pow(radius + c.radius, 2)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function moveWithCollisions(object, delta, radius = 0.55, requireAct3Walkable = false) {
+  if (!object || delta.lengthSq() === 0) return false;
+  const next = object.position.clone().add(delta);
+  if (collidesAt(next, radius)) return false;
+  if (requireAct3Walkable && state.currentAct === 3 && !state.inBossRoom && !isAct3Walkable(next.x, next.z)) return false;
+  object.position.x = next.x;
+  object.position.z = next.z;
+  return true;
+}
+
+function segmentBlockedByCover(start, end, colliders = activeCoverColliders()) {
+  const ax = start.x;
+  const az = start.z;
+  const bx = end.x;
+  const bz = end.z;
+  const abx = bx - ax;
+  const abz = bz - az;
+  const denom = abx * abx + abz * abz || 1;
+  for (const c of colliders) {
+    const t = THREE.MathUtils.clamp(((c.x - ax) * abx + (c.z - az) * abz) / denom, 0, 1);
+    const px = ax + abx * t;
+    const pz = az + abz * t;
+    const dx = px - c.x;
+    const dz = pz - c.z;
+    if (dx * dx + dz * dz <= c.radius * c.radius) return true;
+  }
+  return false;
+}
+
+function isAct3Walkable(x, z) {
+  return act3SafeZones.some(zone =>
+    Math.abs(x - zone.x) <= zone.w / 2 && Math.abs(z - zone.z) <= zone.d / 2
+  );
+}
+
+function addAct3SafeZone(x, z, w, d) {
+  act3SafeZones.push({ x, z, w, d });
+}
+
+function createTextSprite(text, color = '#f7e7a3') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 768;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.78)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#c9a227';
+  ctx.lineWidth = 5;
+  ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+  ctx.fillStyle = color;
+  ctx.font = 'bold 34px Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(10.5, 1.75, 1);
+  return sprite;
+}
+
+function createStoneSign(text, x, z) {
+  const group = new THREE.Group();
+  const stone = new THREE.Mesh(
+    new THREE.BoxGeometry(2.8, 1.6, 0.45),
+    new THREE.MeshStandardMaterial({ color: 0x77736a, roughness: 1 })
+  );
+  stone.position.y = 1.1;
+  stone.castShadow = true;
+  group.add(stone);
+  const post = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 1.2, 0.35),
+    new THREE.MeshStandardMaterial({ color: 0x544a3b, roughness: 1 })
+  );
+  post.position.y = 0.35;
+  group.add(post);
+  const label = createTextSprite(text);
+  label.position.set(0, 2.65, 0.1);
+  group.add(label);
+  group.position.set(x, 0, z);
+  envGroup.add(group);
+  addWorldCollider(x, z, 1.15, 2.8, 'solid');
+  return group;
+}
+
+function createBoxStructure({ x, y = 0, z, w, h, d, color = 0x68656a, collider = true }) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0.05 })
+  );
+  mesh.position.set(x, y + h / 2, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  envGroup.add(mesh);
+  if (collider) addBoxCollider(x, z, w, d, h, 'solid');
+  return mesh;
+}
+
+function createAct3Architecture() {
+  const stone = 0x55545a;
+  const darkStone = 0x3b3a40;
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x4a494f, roughness: 0.95 });
+  const voidMat = new THREE.MeshStandardMaterial({ color: 0x090a10, roughness: 1 });
+
+  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), voidMat);
+  voidFloor.rotation.x = -Math.PI / 2;
+  voidFloor.position.y = -12;
+  envGroup.add(voidFloor);
+
+  const platforms = [
+    { x: 0, z: 0, w: 30, d: 28 },
+    { x: 0, z: -30, w: 7, d: 34 },
+    { x: 0, z: -55, w: 28, d: 18 },
+    { x: 30, z: -8, w: 22, d: 22 },
+    { x: 19, z: -8, w: 16, d: 6 },
+    { x: -30, z: 10, w: 22, d: 22 },
+    { x: -19, z: 10, w: 16, d: 6 }
+  ];
+
+  platforms.forEach(p => {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, 1.2, p.d), floorMat);
+    slab.position.set(p.x, -0.6, p.z);
+    slab.receiveShadow = true;
+    envGroup.add(slab);
+    addAct3SafeZone(p.x, p.z, p.w, p.d);
+  });
+
+  // Broken citadel walls around the central courtyard and portal platform.
+  [
+    [-13, -6, 2, 5, 10], [13, -6, 2, 7, 10], [-11, 9, 2, 4, 7], [11, 9, 2, 5, 7],
+    [-12, -59, 2, 6, 8], [12, -59, 2, 6, 8], [-10, -50, 5, 4, 2], [10, -50, 5, 5, 2]
+  ].forEach(([x, z, w, h, d]) => createBoxStructure({ x, z, w, h, d, color: stone }));
+
+  // Citadel towers and ruined battlements.
+  [[-11, -52], [11, -52], [-11, -61], [11, -61]].forEach(([x, z]) => {
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.3, 2.7, 8, 8),
+      new THREE.MeshStandardMaterial({ color: darkStone, roughness: 1 })
+    );
+    tower.position.set(x, 4, z);
+    tower.castShadow = true;
+    tower.receiveShadow = true;
+    envGroup.add(tower);
+    addWorldCollider(x, z, 2.45, 8, 'solid');
+  });
+
+  // Low bridge-edge ruins: enough to sell the citadel without preventing falls.
+  for (let z = -18; z >= -42; z -= 8) {
+    createBoxStructure({ x: -3.6, z, w: 0.7, h: 1.1, d: 3.2, color: darkStone, collider: false });
+    createBoxStructure({ x: 3.6, z, w: 0.7, h: 1.1, d: 3.2, color: darkStone, collider: false });
+  }
+}
+
+function randomMonsterSpawnPoint(actNum) {
+  if (actNum === 3) {
+    const zones = [
+      { x: 30, z: -8, w: 16, d: 16 },
+      { x: -30, z: 10, w: 16, d: 16 },
+      { x: 0, z: -55, w: 18, d: 11 }
+    ];
+    const zone = zones[Math.floor(Math.random() * zones.length)];
+    return {
+      x: zone.x + (Math.random() - 0.5) * zone.w,
+      z: zone.z + (Math.random() - 0.5) * zone.d
+    };
+  }
+  const angle = Math.random() * Math.PI * 2;
+  const r = 20 + Math.random() * 50;
+  return { x: Math.cos(angle) * r, z: Math.sin(angle) * r };
+}
+
+function damagePlayer(amount, sourcePosition = null, knockbackStrength = 0) {
+  if (state.isDead || !playerGroup) return;
+  const dmg = Math.max(0, Math.floor(amount));
+  state.player.hp = Math.max(0, state.player.hp - dmg);
+  showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
+  if (sourcePosition && knockbackStrength > 0) {
+    const push = playerGroup.position.clone().sub(sourcePosition).setY(0);
+    if (push.lengthSq() > 0.001) {
+      push.normalize().multiplyScalar(knockbackStrength);
+      moveWithCollisions(playerGroup, push, 0.55, false);
+    }
+  }
+  updateHUD();
+  if (state.player.hp <= 0) onPlayerDeath();
+}
+
+function updatePlayerVisual(dt, moving) {
+  if (!playerModel) return;
+  playerVisualTime += dt;
+  const baseY = playerModel.userData.baseY ?? playerModel.position.y;
+  playerModel.userData.baseY = baseY;
+  const bob = moving ? Math.sin(playerVisualTime * 10) * 0.045 : Math.sin(playerVisualTime * 2.2) * 0.012;
+  playerModel.position.y = baseY + bob;
+
+  if (playerAttackAnimTimer > 0) {
+    playerAttackAnimTimer = Math.max(0, playerAttackAnimTimer - dt);
+    const progress = 1 - playerAttackAnimTimer / 0.28;
+    playerModel.rotation.z = -Math.sin(progress * Math.PI) * 0.32;
+    playerModel.rotation.x = Math.sin(progress * Math.PI) * 0.09;
+  } else {
+    playerModel.rotation.z = THREE.MathUtils.lerp(playerModel.rotation.z, moving ? Math.sin(playerVisualTime * 10) * 0.035 : 0, 0.2);
+    playerModel.rotation.x = THREE.MathUtils.lerp(playerModel.rotation.x, 0, 0.2);
+  }
+}
+
+function updateProceduralMonsterVisual(mon, dt, moving) {
+  if (!mon || mon.animation) return;
+  mon.visualTime = (mon.visualTime || Math.random() * 10) + dt;
+  const baseY = mon.mesh.userData.baseY ?? mon.mesh.position.y;
+  mon.mesh.userData.baseY = baseY;
+  const amount = mon.isBoss ? 0.045 : 0.025;
+  mon.mesh.position.y = baseY + Math.sin(mon.visualTime * (moving ? 6 : 2.5)) * amount;
+  if (mon.aiState === 'telegraph' || mon.aiState === 'slamTelegraph') {
+    const pulse = 1 + Math.sin(mon.visualTime * 18) * 0.035;
+    mon.mesh.scale.multiplyScalar(pulse / (mon.lastPulse || 1));
+    mon.lastPulse = pulse;
+  } else if (mon.lastPulse && mon.lastPulse !== 1) {
+    mon.mesh.scale.multiplyScalar(1 / mon.lastPulse);
+    mon.lastPulse = 1;
+  }
 }
 
 // ===================== SCENE BUILD =====================
@@ -396,11 +716,19 @@ async function buildAct(actNum) {
   clearBossArena();
   clearProjectiles();
   envGroup.visible = true;
-  // clear previous
+  mixers = [];
+  worldColliders = [];
+  coverColliders = [];
+  bossCoverColliders = [];
+  act3SafeZones = [];
+
   while (envGroup.children.length) envGroup.remove(envGroup.children[0]);
   monsters.forEach(m => scene.remove(m.mesh));
   monsters = [];
-  portals.forEach(p => { scene.remove(p); if (p.userData.light) scene.remove(p.userData.light); });
+  portals.forEach(p => {
+    scene.remove(p);
+    if (p.userData.light) scene.remove(p.userData.light);
+  });
   portals = [];
   npcs.forEach(n => scene.remove(n.mesh));
   npcs = [];
@@ -409,39 +737,54 @@ async function buildAct(actNum) {
   scene.background = new THREE.Color(cfg.fog);
   scene.fog = new THREE.Fog(cfg.fog, cfg.fogNear, cfg.fogFar);
 
-  // Ground
-  const groundGeo = new THREE.PlaneGeometry(200, 200);
-  const groundMat = new THREE.MeshStandardMaterial({ color: cfg.ground, roughness: 0.9 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  envGroup.add(ground);
+  if (actNum === 3) {
+    createAct3Architecture();
+  } else {
+    const groundGeo = new THREE.PlaneGeometry(200, 200);
+    const groundMat = new THREE.MeshStandardMaterial({ color: cfg.ground, roughness: 0.9 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    envGroup.add(ground);
+  }
 
-  // Scatter environment
   await scatterEnvironment(actNum);
-
-  // Town area (always near origin)
   await buildTown();
-
-  // Monsters
   await spawnMonsters(actNum);
 
-  // Boss portal is only available until that Act's boss is defeated.
   if (!isBossDefeated(actNum) && !state.freeRoam) await spawnBossPortal(actNum);
 }
 
 async function scatterEnvironment(actNum) {
+  if (actNum === 3) {
+    const rubbleSpots = [
+      [-7, 8], [8, 6], [26, -13], [34, -4], [-26, 5], [-34, 14], [7, -55], [-6, -58]
+    ];
+    for (const [x, z] of rubbleSpots) {
+      try {
+        const path = MODEL_PATHS.env.rock[Math.floor(Math.random() * MODEL_PATHS.env.rock.length)];
+        const m = await loadModel(path);
+        fitModel(m, 0.9 + Math.random() * 1.3);
+        m.position.set(x, 0, z);
+        m.rotation.y = Math.random() * Math.PI * 2;
+        envGroup.add(m);
+        addWorldCollider(x, z, 0.8, 1.8, 'solid');
+      } catch {}
+    }
+    return;
+  }
+
   const trees = MODEL_PATHS.env.tree;
   const pines = MODEL_PATHS.env.pine;
-  const count = actNum === 1 ? 25 : actNum === 2 ? 40 : 15;
+  const count = actNum === 1 ? 25 : 44;
 
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = 18 + Math.random() * 70;
     const x = Math.cos(angle) * r;
     const z = Math.sin(angle) * r;
-    // avoid town center
     if (Math.abs(x) < 12 && Math.abs(z) < 12) continue;
+    if (Math.abs(x) < 8 && z < -43 && z > -67) continue;
 
     const path = actNum === 2
       ? pines[Math.floor(Math.random() * pines.length)]
@@ -453,11 +796,11 @@ async function scatterEnvironment(actNum) {
       m.position.set(x, 0, z);
       m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
+      addWorldCollider(x, z, actNum === 2 ? 1.35 : 1.1, 8, actNum === 2 ? 'cover' : 'solid');
     } catch {}
   }
 
-  // Rocks
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 14; i++) {
     const x = (Math.random() - 0.5) * 120;
     const z = (Math.random() - 0.5) * 120;
     if (Math.abs(x) < 10 && Math.abs(z) < 10) continue;
@@ -466,54 +809,53 @@ async function scatterEnvironment(actNum) {
       fitModel(m, 0.8 + Math.random() * 1.5);
       m.position.set(x, 0, z);
       envGroup.add(m);
+      addWorldCollider(x, z, 0.75, 2, 'solid');
     } catch {}
   }
 }
 
 async function buildTown() {
-  // Inn
   try {
     const inn = await loadModel(MODEL_PATHS.buildings.inn);
     fitModel(inn, 6);
     inn.position.set(-8, 0, -6);
     envGroup.add(inn);
+    addBoxCollider(-8, -6, 6.2, 5.2, 6, 'solid');
   } catch {}
 
-  // Weapon shop
   try {
     const shop = await loadModel(MODEL_PATHS.buildings.shop);
     fitModel(shop, 4);
     shop.position.set(8, 0, -5);
     envGroup.add(shop);
+    addBoxCollider(8, -5, 5.2, 4.2, 4, 'solid');
   } catch {}
 
-  // Weaponsmith NPC
   try {
     const smith = await loadModel(MODEL_PATHS.npcs.weaponsmith);
     fitModel(smith, 1.8);
-    smith.position.set(8, 0, -2);
+    smith.position.set(8, 0, -1.2);
     scene.add(smith);
-    npcs.push({ mesh: smith, role: 'Weaponsmith', type: 'shop' });
+    const animation = createAnimationController(smith, MODEL_PATHS.npcs.weaponsmith);
+    playAnimation(animation, 'idle');
+    npcs.push({ mesh: smith, role: 'Weaponsmith', type: 'shop', animation });
   } catch {
-    // fallback
     const geo = new THREE.CapsuleGeometry(0.4, 1, 4, 8);
     const mat = new THREE.MeshStandardMaterial({ color: 0x886633 });
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(8, 0.9, -2);
+    m.position.set(8, 0.9, -1.2);
     scene.add(m);
     npcs.push({ mesh: m, role: 'Weaponsmith', type: 'shop' });
   }
 
-  // Innkeeper (reuse player model scaled)
   try {
     const innk = await loadModel(MODEL_PATHS.player.male);
     fitModel(innk, 1.7);
-    innk.position.set(-8, 0, -2);
+    innk.position.set(-8, 0, -1.2);
     scene.add(innk);
     npcs.push({ mesh: innk, role: 'Innkeeper', type: 'inn' });
   } catch {}
 
-  // Alchemist
   try {
     const alc = await loadModel(MODEL_PATHS.player.female);
     fitModel(alc, 1.65);
@@ -532,12 +874,14 @@ async function spawnPlayer() {
   try {
     playerModel = await loadModel(path);
     fitModel(playerModel, 1.8);
+    playerModel.userData.baseY = playerModel.position.y;
     playerGroup.add(playerModel);
   } catch {
     const geo = new THREE.CapsuleGeometry(0.4, 1.2, 4, 8);
     const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff });
     playerModel = new THREE.Mesh(geo, mat);
     playerModel.position.y = 0.9;
+    playerModel.userData.baseY = playerModel.position.y;
     playerGroup.add(playerModel);
   }
 
@@ -550,12 +894,11 @@ async function spawnMonsters(actNum) {
 
   for (let i = 0; i < count; i++) {
     const type = types[Math.floor(Math.random() * types.length)];
-    const angle = Math.random() * Math.PI * 2;
-    const r = 20 + Math.random() * 50;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
-
-    const mon = await createMonster(type, x, z, false);
+    let point = randomMonsterSpawnPoint(actNum);
+    for (let attempts = 0; attempts < 8 && collidesAt(new THREE.Vector3(point.x, 0, point.z), 1.2, worldColliders); attempts++) {
+      point = randomMonsterSpawnPoint(actNum);
+    }
+    const mon = await createMonster(type, point.x, point.z, false);
     monsters.push(mon);
   }
 }
@@ -570,7 +913,6 @@ async function createMonster(type, x, z, isBoss = false) {
     mesh = await loadModel(path);
     const h = isBoss ? (state.currentAct === 3 ? 5 : 3.5) : (type === 'golem' ? 2.8 : type === 'wolf' ? 1.2 : 1.5);
     fitModel(mesh, h);
-    // Each monster gets its own materials so hit-flash does not affect every clone.
     mesh.traverse(obj => {
       if (!obj.isMesh || !obj.material) return;
       obj.material = Array.isArray(obj.material) ? obj.material.map(m => m.clone()) : obj.material.clone();
@@ -583,9 +925,9 @@ async function createMonster(type, x, z, isBoss = false) {
   }
 
   mesh.position.set(x, 0, z);
+  mesh.userData.baseY = mesh.position.y;
   scene.add(mesh);
 
-  // HP bar
   const barGeo = new THREE.PlaneGeometry(1.2, 0.12);
   const barMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
   const barBg = new THREE.Mesh(barGeo, barMat);
@@ -604,6 +946,8 @@ async function createMonster(type, x, z, isBoss = false) {
   const atk = isBoss
     ? 12 + Math.floor(level * 0.42)
     : 5 + Math.floor(level * 0.34);
+  const animation = createAnimationController(mesh, path);
+  playAnimation(animation, 'idle');
 
   return {
     mesh,
@@ -618,7 +962,15 @@ async function createMonster(type, x, z, isBoss = false) {
     cooldown: Math.random() * 0.5,
     barFill,
     barBg,
-    phase: 1
+    phase: 1,
+    animation,
+    animLock: 0,
+    aiState: isBoss ? 'idle' : 'chase',
+    stateTimer: isBoss ? 0.8 : 0,
+    warningMesh: null,
+    chargeDir: new THREE.Vector3(),
+    hasHitDuringCharge: false,
+    visualTime: Math.random() * 8
   };
 }
 
@@ -637,16 +989,22 @@ async function spawnBossPortal(actNum) {
   scene.add(portal);
   portals.push(portal);
 
-  // marker light
   const light = new THREE.PointLight(0x8844ff, 1.5, 15);
   light.position.copy(portal.position);
   scene.add(light);
   portal.userData.light = light;
+
+  const hints = {
+    1: 'Watch the stance. Dodge the charge.',
+    2: 'The trees are your shield.',
+    3: 'The bridge is narrow. Choose your steps wisely.'
+  };
+  createStoneSign(hints[actNum], -5.5, -49);
 }
 
 // ===================== COMBAT & SYSTEMS =====================
 function onClickAttack(e) {
-  if (state.isDead || attackCooldown > 0 || !playerGroup) return;
+  if (state.isDead || state.falling || attackCooldown > 0 || !playerGroup) return;
   if (modal.classList.contains('hidden') === false) return;
   if (overlay.classList.contains('hidden') === false) return;
 
@@ -671,9 +1029,14 @@ function onClickAttack(e) {
   if (dist > 4.5) return;
 
   attackCooldown = 0.45;
+  playerAttackAnimTimer = 0.28;
   const dmg = state.player.attack + Math.floor(Math.random() * 8);
   mon.hp -= dmg;
   flashMonster(mon);
+  if (mon.animation) {
+    playAnimation(mon.animation, 'hit', true);
+    mon.animLock = 0.22;
+  }
   applyKnockback(mon, 1.15);
   showDamage(mon.mesh.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
 
@@ -685,11 +1048,9 @@ function onClickAttack(e) {
 }
 
 function awardMonsterRewards(mon) {
-  const playerLevel = Math.max(1, state.player.level);
-  const ratio = THREE.MathUtils.clamp(mon.level / playerLevel, 0.25, 1.6);
-  const baseXp = mon.isBoss ? 600 + mon.level * 35 : 45 + mon.level * 14;
-  const xpGain = Math.max(1, Math.round(baseXp * ratio));
-  const goldGain = mon.isBoss ? 100 + mon.level * 10 : 5 + mon.level * 5;
+  const rewards = calculateRewards(mon.level, state.player.level, mon.isBoss);
+  const xpGain = rewards.xp;
+  const goldGain = rewards.gold;
 
   if (state.player.level < MAX_LEVEL) state.player.xp += xpGain;
   state.player.gold += goldGain;
@@ -725,15 +1086,15 @@ function scheduleMonsterRespawn(mon) {
   const delay = MONSTER_RESPAWN_MIN_MS + Math.random() * (MONSTER_RESPAWN_MAX_MS - MONSTER_RESPAWN_MIN_MS);
   setTimeout(async () => {
     if (generation !== worldGeneration || state.currentAct !== actAtDeath || state.inBossRoom) return;
-    const angle = Math.random() * Math.PI * 2;
-    const r = 22 + Math.random() * 48;
-    const respawned = await createMonster(type, Math.cos(angle) * r, Math.sin(angle) * r, false);
+    const point = randomMonsterSpawnPoint(actAtDeath);
+    const respawned = await createMonster(type, point.x, point.z, false);
     if (generation === worldGeneration && state.currentAct === actAtDeath && !state.inBossRoom) monsters.push(respawned);
     else scene.remove(respawned.mesh);
   }, delay);
 }
 
 function onMonsterDeath(mon) {
+  removeBossWarning(mon);
   awardMonsterRewards(mon);
   const wasBoss = mon.isBoss;
   const defeatedAct = state.currentAct;
@@ -776,8 +1137,9 @@ function onMonsterDeath(mon) {
 function onPlayerDeath() {
   if (state.isDead) return;
   state.isDead = true;
-  const lost = Math.floor(state.player.gold * DEATH_GOLD_LOSS_FRACTION);
-  state.player.gold = Math.max(0, state.player.gold - lost);
+  const penalty = applyDeathPenalty(state.player.gold);
+  const lost = penalty.lost;
+  state.player.gold = penalty.remaining;
   state.player.hp = state.player.maxHp;
   clearProjectiles();
   showOverlay('You Died', `You lost ${lost} gold (10%). Returning to town...`, async () => {
@@ -794,9 +1156,9 @@ function onPlayerDeath() {
 }
 
 function usePotion() {
-  if (!playerGroup || state.player.potions <= 0 || state.player.hp >= state.player.maxHp || state.isDead) return;
+  if (!playerGroup || state.falling || state.player.potions <= 0 || state.player.hp >= state.player.maxHp || state.isDead) return;
   state.player.potions--;
-  const heal = Math.floor(state.player.maxHp * POTION_HEAL_FRACTION);
+  const heal = potionHealAmount(state.player.maxHp);
   state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
   showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), heal, 'heal');
   updateHUD();
@@ -804,7 +1166,7 @@ function usePotion() {
 }
 
 function tryInteract() {
-  if (!playerGroup) return;
+  if (!playerGroup || state.falling) return;
   for (const npc of npcs) {
     if (playerGroup.position.distanceTo(npc.mesh.position) < 4) {
       openNPC(npc);
@@ -894,6 +1256,7 @@ function clearBossArena() {
     scene.remove(bossArenaGroup);
     bossArenaGroup = null;
   }
+  bossCoverColliders = [];
   if (envGroup) envGroup.visible = true;
   npcs.forEach(n => { n.mesh.visible = true; });
   portals.forEach(p => {
@@ -902,9 +1265,10 @@ function clearBossArena() {
   });
 }
 
-function createBossArena(actNum) {
+async function createBossArena(actNum) {
   clearBossArena();
   bossArenaGroup = new THREE.Group();
+  bossCoverColliders = [];
   const palette = {
     1: { floor: 0x365b2c, wall: 0x6c7f52, glow: 0xffc857 },
     2: { floor: 0x101a12, wall: 0x253426, glow: 0x8b5cf6 },
@@ -938,6 +1302,48 @@ function createBossArena(actNum) {
   ring.position.y = 0.04;
   bossArenaGroup.add(ring);
 
+  // Act 2 is a cover fight. These trees physically block the player and fireballs.
+  if (actNum === 2) {
+    const coverPositions = [
+      [-6.5, -1.5], [6.5, -1.5], [-8.5, 7], [8.5, 7], [0, 4.5]
+    ];
+    for (const [x, z] of coverPositions) {
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.75, 0.95, 5.2, 9),
+        new THREE.MeshStandardMaterial({ color: 0x5a3b24, roughness: 1 })
+      );
+      trunk.position.y = 2.6;
+      trunk.castShadow = true;
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(2.4, 5.8, 10),
+        new THREE.MeshStandardMaterial({ color: 0x173d20, roughness: 1 })
+      );
+      crown.position.y = 6.2;
+      crown.castShadow = true;
+      tree.add(trunk, crown);
+      tree.position.set(x, 0, z);
+      bossArenaGroup.add(tree);
+      bossCoverColliders.push({ x, z, radius: 1.05, height: 8, type: 'cover' });
+    }
+  }
+
+  // Act 3 gets ruined inner pillars to reinforce the citadel theme.
+  if (actNum === 3) {
+    [[-7, 5], [7, 5], [-9, -4], [9, -4]].forEach(([x, z], i) => {
+      const h = i % 2 === 0 ? 4.2 : 6;
+      const ruin = new THREE.Mesh(
+        new THREE.BoxGeometry(2, h, 2),
+        new THREE.MeshStandardMaterial({ color: 0x4a484f, roughness: 1 })
+      );
+      ruin.position.set(x, h / 2, z);
+      ruin.rotation.y = i * 0.4;
+      ruin.castShadow = true;
+      bossArenaGroup.add(ruin);
+      bossCoverColliders.push({ x, z, radius: 1.15, height: h, type: 'solid' });
+    });
+  }
+
   scene.add(bossArenaGroup);
   envGroup.visible = false;
   npcs.forEach(n => { n.mesh.visible = false; });
@@ -948,11 +1354,11 @@ function createBossArena(actNum) {
 }
 
 async function tryEnterPortal() {
-  if (!playerGroup || state.inBossRoom || state.freeRoam) return;
+  if (!playerGroup || state.falling || state.inBossRoom || state.freeRoam) return;
   for (const p of portals) {
     if (p.userData.isPortal && playerGroup.position.distanceTo(p.position) < 5) {
       const req = ACT[state.currentAct].bossReq;
-      if (state.player.level < req) {
+      if (!canEnterBoss(state.player.level, req)) {
         showOverlay('Too Weak', `You need level ${req} to challenge this boss. (Recommended ${ACT[state.currentAct].recommended})`, () => {});
         return;
       }
@@ -962,7 +1368,7 @@ async function tryEnterPortal() {
       monsters.forEach(m => scene.remove(m.mesh));
       monsters = [];
       clearProjectiles();
-      createBossArena(state.currentAct);
+      await createBossArena(state.currentAct);
       playerGroup.position.set(0, 0, 12);
 
       const boss = await createMonster('boss', 0, -10, true);
@@ -1003,6 +1409,15 @@ function drawMinimap() {
     ctx.arc(cx, cy, 55, 0, Math.PI * 2);
     ctx.stroke();
   } else {
+    if (state.currentAct === 3) {
+      ctx.strokeStyle = 'rgba(180,180,195,0.42)';
+      ctx.lineWidth = 1;
+      act3SafeZones.forEach(zone => {
+        const x = cx + (zone.x - playerGroup.position.x) * scale - (zone.w * scale) / 2;
+        const y = cy + (zone.z - playerGroup.position.z) * scale - (zone.d * scale) / 2;
+        ctx.strokeRect(x, y, zone.w * scale, zone.d * scale);
+      });
+    }
     // Town / NPC markers.
     npcs.forEach(n => {
       const dx = (n.mesh.position.x - playerGroup.position.x) * scale;
@@ -1058,50 +1473,278 @@ function drawMinimap() {
   ctx.fillText('N', 77, 12);
 }
 
-function spawnProjectile(mon) {
+function spawnProjectile(mon, options = {}) {
   if (!playerGroup || mon.hp <= 0) return;
   const start = mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2.2 : 1.3, 0));
   const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
   const dir = target.sub(start).normalize();
+  const spread = options.spread || 0;
+  if (spread) dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);
   const isBossShot = mon.isBoss;
+  const radius = options.radius || (isBossShot ? 0.4 : 0.23);
+  const color = options.color ?? (isBossShot ? 0xff5722 : 0xd7ecff);
+  const emissive = options.emissive ?? (isBossShot ? 0xaa2200 : 0x446688);
   const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(isBossShot ? 0.38 : 0.22, 10, 10),
+    new THREE.SphereGeometry(radius, 12, 12),
     new THREE.MeshStandardMaterial({
-      color: isBossShot ? 0xff5722 : 0xd7ecff,
-      emissive: isBossShot ? 0xaa2200 : 0x446688,
-      emissiveIntensity: 1.1
+      color,
+      emissive,
+      emissiveIntensity: 1.25
     })
   );
   mesh.position.copy(start);
   scene.add(mesh);
   projectiles.push({
     mesh,
-    velocity: dir.multiplyScalar(isBossShot ? 12 : 10),
-    damage: mon.atk + Math.floor(Math.random() * 6),
-    life: 4,
-    owner: mon
+    velocity: dir.multiplyScalar(options.speed || (isBossShot ? 12 : 10)),
+    speed: options.speed || (isBossShot ? 12 : 10),
+    damage: options.damage || mon.atk + Math.floor(Math.random() * 6),
+    life: options.life || 4.5,
+    owner: mon,
+    radius,
+    homing: Boolean(options.homing),
+    turnRate: options.turnRate || 2.8,
+    blockedByCover: options.blockedByCover !== false
   });
+}
+
+function projectileHitsCover(projectile) {
+  if (!projectile.blockedByCover) return false;
+  for (const c of activeCoverColliders()) {
+    const dx = projectile.mesh.position.x - c.x;
+    const dz = projectile.mesh.position.z - c.z;
+    if (dx * dx + dz * dz <= Math.pow(c.radius + projectile.radius, 2)) return true;
+  }
+  return false;
 }
 
 function updateProjectiles(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     p.life -= dt;
+
+    if (p.homing && playerGroup) {
+      const desired = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(p.mesh.position).normalize().multiplyScalar(p.speed);
+      p.velocity.lerp(desired, THREE.MathUtils.clamp(p.turnRate * dt, 0, 0.22));
+    }
+
     p.mesh.position.addScaledVector(p.velocity, dt);
-    if (p.life <= 0) {
+    if (p.life <= 0 || projectileHitsCover(p)) {
       scene.remove(p.mesh);
       projectiles.splice(i, 1);
       continue;
     }
+
     const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1, 0));
-    if (p.mesh.position.distanceTo(target) < 0.85) {
-      state.player.hp = Math.max(0, state.player.hp - p.damage);
-      showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), p.damage);
+    if (p.mesh.position.distanceTo(target) < 0.85 + p.radius) {
+      damagePlayer(p.damage, p.owner?.mesh?.position || null, p.owner?.isBoss ? 0.85 : 0.35);
       scene.remove(p.mesh);
       projectiles.splice(i, 1);
-      updateHUD();
-      if (state.player.hp <= 0) onPlayerDeath();
     }
+  }
+}
+
+function removeBossWarning(mon) {
+  if (!mon?.warningMesh) return;
+  if (mon.warningMesh.parent) mon.warningMesh.parent.remove(mon.warningMesh);
+  mon.warningMesh.geometry?.dispose?.();
+  mon.warningMesh.material?.dispose?.();
+  mon.warningMesh = null;
+}
+
+function beginCharge(mon, telegraphTime = 0.85, color = 0xff3b30) {
+  removeBossWarning(mon);
+  mon.aiState = 'telegraph';
+  mon.stateTimer = telegraphTime;
+  mon.hasHitDuringCharge = false;
+  mon.chargeDir.copy(playerGroup.position).sub(mon.mesh.position).setY(0);
+  if (mon.chargeDir.lengthSq() < 0.001) mon.chargeDir.set(0, 0, 1);
+  mon.chargeDir.normalize();
+
+  const length = 27;
+  const warning = new THREE.Mesh(
+    new THREE.BoxGeometry(1.25, 0.04, length),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, depthWrite: false })
+  );
+  warning.position.copy(mon.mesh.position).addScaledVector(mon.chargeDir, length / 2);
+  warning.position.y = 0.08;
+  warning.rotation.y = Math.atan2(mon.chargeDir.x, mon.chargeDir.z);
+  (bossArenaGroup || scene).add(warning);
+  mon.warningMesh = warning;
+}
+
+function updateChargePattern(mon, dt, config = {}) {
+  const telegraph = config.telegraph ?? 0.85;
+  const chargeSpeed = config.chargeSpeed ?? 18;
+  const chargeTime = config.chargeTime ?? 1.0;
+  const recovery = config.recovery ?? 1.15;
+  const damageMult = config.damageMult ?? 1.45;
+
+  mon.stateTimer -= dt;
+  if (mon.aiState === 'idle') {
+    if (mon.stateTimer <= 0) beginCharge(mon, telegraph, config.color);
+    return;
+  }
+
+  if (mon.aiState === 'telegraph') {
+    mon.mesh.lookAt(
+      mon.mesh.position.x + mon.chargeDir.x,
+      mon.mesh.position.y,
+      mon.mesh.position.z + mon.chargeDir.z
+    );
+    if (mon.warningMesh?.material) mon.warningMesh.material.opacity = 0.28 + Math.sin(performance.now() * 0.018) * 0.18;
+    if (mon.stateTimer <= 0) {
+      removeBossWarning(mon);
+      mon.aiState = 'charge';
+      mon.stateTimer = chargeTime;
+      mon.hasHitDuringCharge = false;
+    }
+    return;
+  }
+
+  if (mon.aiState === 'charge') {
+    const delta = mon.chargeDir.clone().multiplyScalar(chargeSpeed * dt);
+    moveWithCollisions(mon.mesh, delta, 1.1, false);
+    const radial = new THREE.Vector2(mon.mesh.position.x, mon.mesh.position.z);
+    if (radial.length() > 15.5) {
+      radial.setLength(15.5);
+      mon.mesh.position.x = radial.x;
+      mon.mesh.position.z = radial.y;
+      mon.stateTimer = 0;
+    }
+    if (!mon.hasHitDuringCharge && mon.mesh.position.distanceTo(playerGroup.position) < 2.4) {
+      mon.hasHitDuringCharge = true;
+      damagePlayer(Math.floor(mon.atk * damageMult), mon.mesh.position, 2.0);
+    }
+    if (mon.stateTimer <= 0) {
+      mon.aiState = 'recovery';
+      mon.stateTimer = recovery;
+    }
+    return;
+  }
+
+  if (mon.aiState === 'recovery' && mon.stateTimer <= 0) {
+    mon.aiState = 'idle';
+    mon.stateTimer = 0.55;
+  }
+}
+
+function beginGroundSlam(mon) {
+  removeBossWarning(mon);
+  mon.aiState = 'slamTelegraph';
+  mon.stateTimer = 0.95;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(5.8, 6.5, 48),
+    new THREE.MeshBasicMaterial({ color: 0xff5722, transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(mon.mesh.position);
+  ring.position.y = 0.09;
+  (bossArenaGroup || scene).add(ring);
+  mon.warningMesh = ring;
+}
+
+function updateGroundSlam(mon, dt) {
+  mon.stateTimer -= dt;
+  const dist = mon.mesh.position.distanceTo(playerGroup.position);
+  if (mon.aiState === 'slamTelegraph') {
+    if (mon.warningMesh?.material) mon.warningMesh.material.opacity = 0.32 + Math.sin(performance.now() * 0.022) * 0.18;
+    if (mon.stateTimer <= 0) {
+      if (dist < 6.4) damagePlayer(Math.floor(mon.atk * 1.8), mon.mesh.position, 2.4);
+      removeBossWarning(mon);
+      mon.aiState = 'slamRecovery';
+      mon.stateTimer = 0.9;
+    }
+    return;
+  }
+  if (mon.aiState === 'slamRecovery') {
+    if (mon.stateTimer <= 0) {
+      mon.aiState = 'idle';
+      mon.stateTimer = 1.25;
+    }
+    return;
+  }
+
+  if (dist > 6.3) {
+    const dir = playerGroup.position.clone().sub(mon.mesh.position).setY(0).normalize();
+    moveWithCollisions(mon.mesh, dir.multiplyScalar(mon.speed * 0.78 * dt), 1.15, false);
+  }
+  if (mon.stateTimer <= 0 || dist < 5.8) beginGroundSlam(mon);
+}
+
+function updateAct2Boss(mon, dt, dist, dir) {
+  mon.cooldown = Math.max(0, mon.cooldown - dt);
+  const bossPos = mon.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0));
+  const playerPos = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+  const blocked = segmentBlockedByCover(bossPos, playerPos, bossCoverColliders);
+  const preferred = 12;
+
+  if (blocked) {
+    // Reposition until the player is visible again; cover therefore matters tactically.
+    const side = new THREE.Vector3(-dir.z, 0, dir.x);
+    moveWithCollisions(mon.mesh, side.multiplyScalar(mon.speed * 0.75 * dt), 1.05, false);
+    playAnimation(mon.animation, 'walk');
+    return;
+  }
+
+  if (dist > preferred + 2) moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(mon.speed * 0.55 * dt), 1.05, false);
+  else if (dist < preferred - 3) moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(-mon.speed * 0.45 * dt), 1.05, false);
+
+  if (dist < 20 && mon.cooldown <= 0) {
+    mon.cooldown = 1.35;
+    spawnProjectile(mon, { homing: true, turnRate: 3.2, speed: 10.8, radius: 0.45, color: 0xff642e, emissive: 0xbb2600 });
+    playAnimation(mon.animation, 'attack', true);
+    mon.animLock = 0.45;
+  }
+}
+
+function updateAct3Boss(mon, dt, dist, dir) {
+  const hpPct = mon.hp / mon.maxHp;
+  const nextPhase = hpPct < 0.33 ? 3 : hpPct < 0.66 ? 2 : 1;
+  if (nextPhase !== mon.phase) {
+    removeBossWarning(mon);
+    mon.phase = nextPhase;
+    mon.aiState = 'idle';
+    mon.stateTimer = 0.7;
+    mon.cooldown = 0.45;
+    flashMonster(mon);
+  }
+
+  if (mon.phase === 1) {
+    updateChargePattern(mon, dt, { telegraph: 0.95, chargeSpeed: 16, chargeTime: 1.0, recovery: 1.0, damageMult: 1.35, color: 0xff9f43 });
+    return;
+  }
+
+  if (mon.phase === 2) {
+    mon.cooldown = Math.max(0, mon.cooldown - dt);
+    const preferred = 11;
+    if (dist > preferred + 2) moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(mon.speed * 0.55 * dt), 1.15, false);
+    else if (dist < preferred - 2) moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(-mon.speed * 0.45 * dt), 1.15, false);
+    if (mon.cooldown <= 0) {
+      mon.cooldown = 1.25;
+      [-0.18, 0, 0.18].forEach(spread => spawnProjectile(mon, {
+        spread,
+        speed: 12.5,
+        radius: 0.32,
+        damage: Math.floor(mon.atk * 0.9),
+        color: 0xffc04d,
+        emissive: 0xb86b00
+      }));
+      mon.animLock = 0.45;
+    }
+    return;
+  }
+
+  updateGroundSlam(mon, dt);
+}
+
+function updateBossAI(mon, dt, dist, dir) {
+  if (state.currentAct === 1) {
+    updateChargePattern(mon, dt, { telegraph: 0.8, chargeSpeed: 18.5, chargeTime: 0.95, recovery: 1.2, damageMult: 1.5, color: 0xff3b30 });
+  } else if (state.currentAct === 2) {
+    updateAct2Boss(mon, dt, dist, dir);
+  } else {
+    updateAct3Boss(mon, dt, dist, dir);
   }
 }
 
@@ -1115,8 +1758,16 @@ function animate() {
 
   const dt = Math.min(clock.getDelta(), 0.05);
   attackCooldown = Math.max(0, attackCooldown - dt);
+  fallCooldown = Math.max(0, fallCooldown - dt);
+  mixers.forEach(controller => controller.mixer.update(dt));
 
-  // Movement
+  const uiBlocking = !overlay.classList.contains('hidden') || !modal.classList.contains('hidden');
+  if (uiBlocking) {
+    drawMinimap();
+    renderer.render(scene, camera);
+    return;
+  }
+
   const speed = 8;
   const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
@@ -1125,15 +1776,40 @@ function animate() {
   if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
   if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
   if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
-  if (move.length() > 0) {
+
+  let moving = false;
+  if (!state.falling && move.length() > 0) {
     move.normalize().multiplyScalar(speed * dt);
-    playerGroup.position.add(move);
-    // face movement
-    const targetAngle = Math.atan2(move.x, move.z);
-    playerGroup.rotation.y = THREE.MathUtils.lerp(playerGroup.rotation.y, targetAngle + Math.PI, 0.15);
+    moving = moveWithCollisions(playerGroup, move, 0.55, false);
+    if (moving) {
+      const targetAngle = Math.atan2(move.x, move.z);
+      playerGroup.rotation.y = THREE.MathUtils.lerp(playerGroup.rotation.y, targetAngle + Math.PI, 0.15);
+    }
   }
 
-  // Keep the player inside the sealed boss arena.
+  // Highland Citadel: stepping off the platforms/bridges sends the player into the void.
+  if (state.currentAct === 3 && !state.inBossRoom) {
+    if (!state.falling && !isAct3Walkable(playerGroup.position.x, playerGroup.position.z)) {
+      state.falling = true;
+    }
+    if (state.falling) {
+      playerGroup.position.y -= 16 * dt;
+      if (playerGroup.position.y < -8) {
+        state.falling = false;
+        playerGroup.position.set(0, 0, 4);
+        if (fallCooldown <= 0) {
+          fallCooldown = 1;
+          damagePlayer(Math.max(1, Math.floor(state.player.maxHp * 0.2)));
+        }
+      }
+    } else {
+      playerGroup.position.y = THREE.MathUtils.lerp(playerGroup.position.y, 0, 0.3);
+    }
+  } else {
+    state.falling = false;
+    playerGroup.position.y = THREE.MathUtils.lerp(playerGroup.position.y, 0, 0.3);
+  }
+
   if (state.inBossRoom) {
     const flat = new THREE.Vector2(playerGroup.position.x, playerGroup.position.z);
     const maxRadius = 16.2;
@@ -1142,75 +1818,112 @@ function animate() {
       playerGroup.position.x = flat.x;
       playerGroup.position.z = flat.y;
     }
+  } else if (state.currentAct !== 3) {
+    playerGroup.position.x = THREE.MathUtils.clamp(playerGroup.position.x, -94, 94);
+    playerGroup.position.z = THREE.MathUtils.clamp(playerGroup.position.z, -94, 94);
   }
 
-  // Camera
+  updatePlayerVisual(dt, moving && !state.falling);
+
   const offset = new THREE.Vector3(0, 7, 11);
   offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   camera.position.lerp(playerGroup.position.clone().add(offset), 0.1);
   camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.4, playerGroup.position.z);
 
-  // Monster AI
   monsters.forEach(mon => {
     if (mon.hp <= 0 || state.isDead) return;
     mon.cooldown = Math.max(0, mon.cooldown - dt);
+    mon.animLock = Math.max(0, (mon.animLock || 0) - dt);
     mon.barBg.lookAt(camera.position);
 
     const dist = mon.mesh.position.distanceTo(playerGroup.position);
     const aggro = mon.isBoss ? 45 : 24;
-    if (dist >= aggro) return;
-
-    const dir = playerGroup.position.clone().sub(mon.mesh.position);
-    dir.y = 0;
+    const dir = playerGroup.position.clone().sub(mon.mesh.position).setY(0);
     if (dir.lengthSq() > 0.0001) dir.normalize();
     mon.mesh.lookAt(playerGroup.position.x, mon.mesh.position.y, playerGroup.position.z);
 
-    if (mon.isRanged) {
-      // Ranged enemies keep some distance and fire actual projectiles.
-      const preferred = mon.isBoss ? 13 : 10;
-      if (dist > preferred + 2) mon.mesh.position.addScaledVector(dir, mon.speed * 0.7 * dt);
-      else if (dist < preferred - 3) mon.mesh.position.addScaledVector(dir, -mon.speed * 0.55 * dt);
-      if (dist < 18 && mon.cooldown <= 0) {
-        mon.cooldown = mon.isBoss ? 1.15 : 1.65;
-        spawnProjectile(mon);
-      }
+    if (mon.isBoss) {
+      updateBossAI(mon, dt, dist, dir);
+      updateProceduralMonsterVisual(mon, dt, mon.aiState === 'charge');
       return;
     }
 
-    if (dist > 2.5) mon.mesh.position.addScaledVector(dir, mon.speed * dt);
-    if (dist < 2.8 && mon.cooldown <= 0) {
-      mon.cooldown = mon.isBoss ? 0.85 : 1.0;
-      let dmg = mon.atk + Math.floor(Math.random() * 6);
-      if (mon.isBoss && state.currentAct === 3) {
-        const hpPct = mon.hp / mon.maxHp;
-        mon.phase = hpPct < 0.33 ? 3 : hpPct < 0.66 ? 2 : 1;
-        if (mon.phase === 2) dmg = Math.floor(dmg * 1.25);
-        if (mon.phase === 3) dmg = Math.floor(dmg * 1.5);
-      }
-      state.player.hp = Math.max(0, state.player.hp - dmg);
-      showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
-      const push = playerGroup.position.clone().sub(mon.mesh.position).setY(0).normalize();
-      playerGroup.position.addScaledVector(push, mon.isBoss ? 1.2 : 0.55);
-      updateHUD();
-      if (state.player.hp <= 0) onPlayerDeath();
+    if (dist >= aggro) {
+      if (mon.animLock <= 0) playAnimation(mon.animation, 'idle');
+      updateProceduralMonsterVisual(mon, dt, false);
+      return;
     }
+
+    if (mon.isRanged) {
+      const start = mon.mesh.position.clone().add(new THREE.Vector3(0, 1.3, 0));
+      const end = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+      const blocked = segmentBlockedByCover(start, end, coverColliders);
+      const preferred = 10;
+      let didMove = false;
+
+      if (blocked) {
+        const side = new THREE.Vector3(-dir.z, 0, dir.x);
+        didMove = moveWithCollisions(mon.mesh, side.multiplyScalar(mon.speed * 0.65 * dt), 0.7, false);
+      } else if (dist > preferred + 2) {
+        didMove = moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(mon.speed * 0.7 * dt), 0.7, false);
+      } else if (dist < preferred - 3) {
+        didMove = moveWithCollisions(mon.mesh, dir.clone().multiplyScalar(-mon.speed * 0.55 * dt), 0.7, false);
+      }
+
+      if (!blocked && dist < 18 && mon.cooldown <= 0) {
+        mon.cooldown = 1.65;
+        spawnProjectile(mon);
+        if (mon.animation) {
+          playAnimation(mon.animation, 'attack', true);
+          mon.animLock = 0.5;
+        }
+      } else if (mon.animLock <= 0) {
+        playAnimation(mon.animation, didMove ? 'walk' : 'idle');
+      }
+      updateProceduralMonsterVisual(mon, dt, didMove);
+      return;
+    }
+
+    let didMove = false;
+    if (dist > 2.5) {
+      didMove = moveWithCollisions(
+        mon.mesh,
+        dir.clone().multiplyScalar(mon.speed * dt),
+        mon.type === 'golem' ? 0.95 : 0.65,
+        state.currentAct === 3
+      );
+    }
+
+    if (dist < 2.8 && mon.cooldown <= 0) {
+      mon.cooldown = 1.0;
+      const dmg = mon.atk + Math.floor(Math.random() * 6);
+      damagePlayer(dmg, mon.mesh.position, 0.55);
+      if (mon.animation) {
+        playAnimation(mon.animation, 'attack', true);
+        mon.animLock = 0.5;
+      }
+    } else if (mon.animLock <= 0) {
+      playAnimation(mon.animation, didMove ? 'walk' : 'idle');
+    }
+    updateProceduralMonsterVisual(mon, dt, didMove);
   });
 
   updateProjectiles(dt);
 
-  // Context prompt
   let prompt = '';
-  for (const npc of npcs) {
-    if (playerGroup.position.distanceTo(npc.mesh.position) < 4) {
-      prompt = `Press T — ${npc.role}`;
-      break;
-    }
-  }
-  if (!prompt && !state.freeRoam) {
-    for (const p of portals) {
-      if (playerGroup.position.distanceTo(p.position) < 5) {
-        prompt = 'Press E — Enter Boss Room';
+  if (!state.falling) {
+    for (const npc of npcs) {
+      if (playerGroup.position.distanceTo(npc.mesh.position) < 4) {
+        prompt = `Press T — ${npc.role}`;
         break;
+      }
+    }
+    if (!prompt && !state.freeRoam) {
+      for (const p of portals) {
+        if (playerGroup.position.distanceTo(p.position) < 5) {
+          prompt = 'Press E — Enter Boss Room';
+          break;
+        }
       }
     }
   }
@@ -1253,6 +1966,8 @@ function init() {
 
   window.addEventListener('keydown', e => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    const uiBlocking = !overlay.classList.contains('hidden') || !modal.classList.contains('hidden');
+    if (uiBlocking) return;
     keys[e.code] = true;
     if (e.code === 'KeyH') usePotion();
     if (e.code === 'KeyT') tryInteract();
@@ -1283,6 +1998,9 @@ async function startGame(fromSave) {
   if (fromSave && state.savedPosition) {
     const pos = state.savedPosition;
     playerGroup.position.set(Number(pos.x) || 0, Number(pos.y) || 0, Number(pos.z) || 4);
+    if (state.currentAct === 3 && !isAct3Walkable(playerGroup.position.x, playerGroup.position.z)) {
+      playerGroup.position.set(0, 0, 4);
+    }
   }
   updateHUD();
   hud.classList.remove('hidden');
