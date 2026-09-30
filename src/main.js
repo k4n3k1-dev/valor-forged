@@ -17,6 +17,7 @@ import {
   clampLevel,
   canEnterBoss
 } from './gameLogic.js';
+import { gameAudio } from './audio.js';
 
 // ===================== CONSTANTS =====================
 const ACT = {
@@ -153,6 +154,10 @@ let act3SafeZones = [];
 let playerAttackAnimTimer = 0;
 let playerVisualTime = 0;
 let fallCooldown = 0;
+let footstepTimer = 0;
+let visualEffects = [];
+let cameraShakeTime = 0;
+let cameraShakeStrength = 0;
 
 // ===================== DOM =====================
 const $ = id => document.getElementById(id);
@@ -240,6 +245,65 @@ function flashMonster(mon) {
   }, 90);
 }
 
+
+function addCameraShake(strength = 0.08, duration = 0.12) {
+  cameraShakeStrength = Math.max(cameraShakeStrength, strength);
+  cameraShakeTime = Math.max(cameraShakeTime, duration);
+}
+
+function spawnBurst(position, color = 0xffcc66, count = 12, speed = 3.5, life = 0.45, size = 0.11) {
+  if (!scene || !position) return;
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = position.x;
+    positions[i * 3 + 1] = position.y;
+    positions[i * 3 + 2] = position.z;
+    const v = new THREE.Vector3(
+      (Math.random() - 0.5) * 2,
+      Math.random() * 1.4 + 0.25,
+      (Math.random() - 0.5) * 2
+    ).normalize().multiplyScalar(speed * (0.55 + Math.random() * 0.65));
+    velocities.push(v);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color,
+    size,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+  visualEffects.push({ points, velocities, life, maxLife: life });
+}
+
+function updateVisualEffects(dt) {
+  for (let i = visualEffects.length - 1; i >= 0; i--) {
+    const fx = visualEffects[i];
+    fx.life -= dt;
+    const attr = fx.points.geometry.getAttribute('position');
+    for (let j = 0; j < fx.velocities.length; j++) {
+      const v = fx.velocities[j];
+      v.y -= 4.5 * dt;
+      attr.array[j * 3] += v.x * dt;
+      attr.array[j * 3 + 1] += v.y * dt;
+      attr.array[j * 3 + 2] += v.z * dt;
+    }
+    attr.needsUpdate = true;
+    fx.points.material.opacity = Math.max(0, fx.life / fx.maxLife);
+    if (fx.life <= 0) {
+      scene.remove(fx.points);
+      fx.points.geometry.dispose();
+      fx.points.material.dispose();
+      visualEffects.splice(i, 1);
+    }
+  }
+}
+
 function applyKnockback(mon, strength = 1) {
   if (!playerGroup || !mon?.mesh) return;
   const dir = mon.mesh.position.clone().sub(playerGroup.position);
@@ -255,6 +319,7 @@ function showOverlay(title, text, cb) {
   overlay.classList.remove('hidden');
   const btn = $('overlay-btn');
   const handler = () => {
+    gameAudio.play('ui');
     overlay.classList.add('hidden');
     btn.removeEventListener('click', handler);
     if (cb) cb();
@@ -627,6 +692,9 @@ function damagePlayer(amount, sourcePosition = null, knockbackStrength = 0) {
   if (state.isDead || !playerGroup) return;
   const dmg = Math.max(0, Math.floor(amount));
   state.player.hp = Math.max(0, state.player.hp - dmg);
+  gameAudio.play('hurt');
+  spawnBurst(playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0)), 0xff5544, 9, 2.5, 0.34, 0.09);
+  addCameraShake(0.08, 0.12);
   showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
   if (sourcePosition && knockbackStrength > 0) {
     const push = playerGroup.position.clone().sub(sourcePosition).setY(0);
@@ -1030,9 +1098,12 @@ function onClickAttack(e) {
 
   attackCooldown = 0.45;
   playerAttackAnimTimer = 0.28;
+  gameAudio.play('swing');
   const dmg = state.player.attack + Math.floor(Math.random() * 8);
   mon.hp -= dmg;
   flashMonster(mon);
+  gameAudio.play('hit');
+  spawnBurst(mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2 : 1.2, 0)), mon.isBoss ? 0xffd166 : 0xfff2a6, mon.isBoss ? 18 : 10, 3.8, 0.38, 0.105);
   if (mon.animation) {
     playAnimation(mon.animation, 'hit', true);
     mon.animLock = 0.22;
@@ -1073,6 +1144,8 @@ function awardMonsterRewards(mon) {
     state.player.xpToNext = xpForLevel(state.player.level);
   }
   if (state.player.level > startLevel && !mon.isBoss) {
+    gameAudio.play('levelUp');
+    spawnBurst(playerGroup.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 0x66ccff, 24, 4.5, 0.75, 0.12);
     if (state.player.level >= MAX_LEVEL) showOverlay('Maximum Level!', `You reached the level cap: ${MAX_LEVEL}.`, () => {});
     else showOverlay('Level Up!', `You reached level ${state.player.level}!`, () => {});
   }
@@ -1095,6 +1168,9 @@ function scheduleMonsterRespawn(mon) {
 
 function onMonsterDeath(mon) {
   removeBossWarning(mon);
+  gameAudio.play(mon.isBoss ? 'victory' : 'enemyDeath');
+  spawnBurst(mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2 : 1.1, 0)), mon.isBoss ? 0xf0d060 : 0xaa66ff, mon.isBoss ? 42 : 18, mon.isBoss ? 6 : 4, mon.isBoss ? 1.05 : 0.55, mon.isBoss ? 0.16 : 0.11);
+  if (mon.isBoss) addCameraShake(0.18, 0.45);
   awardMonsterRewards(mon);
   const wasBoss = mon.isBoss;
   const defeatedAct = state.currentAct;
@@ -1111,6 +1187,7 @@ function onMonsterDeath(mon) {
 
   state.flags[`act${defeatedAct}BossDefeated`] = true;
   state.inBossRoom = false;
+  gameAudio.setScene(defeatedAct, false);
   clearProjectiles();
   clearBossArena();
 
@@ -1137,6 +1214,7 @@ function onMonsterDeath(mon) {
 function onPlayerDeath() {
   if (state.isDead) return;
   state.isDead = true;
+  gameAudio.play('death');
   const penalty = applyDeathPenalty(state.player.gold);
   const lost = penalty.lost;
   state.player.gold = penalty.remaining;
@@ -1158,6 +1236,8 @@ function onPlayerDeath() {
 function usePotion() {
   if (!playerGroup || state.falling || state.player.potions <= 0 || state.player.hp >= state.player.maxHp || state.isDead) return;
   state.player.potions--;
+  gameAudio.play('potion');
+  spawnBurst(playerGroup.position.clone().add(new THREE.Vector3(0, 1, 0)), 0x55ee88, 18, 3.1, 0.65, 0.105);
   const heal = potionHealAmount(state.player.maxHp);
   state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
   showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), heal, 'heal');
@@ -1176,6 +1256,7 @@ function tryInteract() {
 }
 
 function openNPC(npc) {
+  gameAudio.play('ui');
   $('modal-title').textContent = npc.role;
   const body = $('modal-body');
   body.innerHTML = '';
@@ -1197,6 +1278,7 @@ function openNPC(npc) {
       btn.disabled = !canBuy;
       btn.onclick = () => {
         state.player.gold -= w.price;
+        gameAudio.play('coin');
         state.player.weaponIdx = i;
         state.player.attack = w.atk + Math.floor((state.player.level - 1) * 1.5);
         updateHUD();
@@ -1215,6 +1297,7 @@ function openNPC(npc) {
     btn.disabled = state.player.gold < 25 || state.player.potions >= 10;
     btn.onclick = () => {
       state.player.gold -= 25;
+      gameAudio.play('coin');
       state.player.potions++;
       updateHUD();
       saveGame();
@@ -1230,6 +1313,7 @@ function openNPC(npc) {
     btn.textContent = 'Rest';
     btn.onclick = () => {
       state.player.hp = state.player.maxHp;
+      gameAudio.play('save');
       saveGame();
       updateHUD();
       closeModal();
@@ -1243,6 +1327,7 @@ function openNPC(npc) {
 }
 
 function closeModal() {
+  gameAudio.play('ui');
   modal.classList.add('hidden');
 }
 
@@ -1363,7 +1448,10 @@ async function tryEnterPortal() {
         return;
       }
 
+      gameAudio.play('portal');
+      spawnBurst(p.position.clone(), 0x9b5cff, 30, 4.8, 0.8, 0.13);
       state.inBossRoom = true;
+      gameAudio.setScene(state.currentAct, true);
       worldGeneration++;
       monsters.forEach(m => scene.remove(m.mesh));
       monsters = [];
@@ -1373,6 +1461,7 @@ async function tryEnterPortal() {
 
       const boss = await createMonster('boss', 0, -10, true);
       monsters.push(boss);
+      gameAudio.play('boss');
       showOverlay(`Act ${state.currentAct} Boss Room`, `The arena is sealed. Defeat the boss to continue.`, () => {});
       return;
     }
@@ -1383,6 +1472,7 @@ async function rebuildWorld() {
   loading.classList.remove('hidden');
   $('loading-text').textContent = state.freeRoam ? 'Opening free roam...' : `Entering ${ACT[state.currentAct].name}...`;
   await buildAct(state.currentAct);
+  gameAudio.setScene(state.currentAct, false);
   playerGroup.position.set(0, 0, 4);
   loading.classList.add('hidden');
   updateHUD();
@@ -1475,6 +1565,7 @@ function drawMinimap() {
 
 function spawnProjectile(mon, options = {}) {
   if (!playerGroup || mon.hp <= 0) return;
+  gameAudio.play(mon.isBoss ? 'fireball' : 'projectile');
   const start = mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2.2 : 1.3, 0));
   const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
   const dir = target.sub(start).normalize();
@@ -1529,7 +1620,12 @@ function updateProjectiles(dt) {
     }
 
     p.mesh.position.addScaledVector(p.velocity, dt);
-    if (p.life <= 0 || projectileHitsCover(p)) {
+    const hitCover = projectileHitsCover(p);
+    if (p.life <= 0 || hitCover) {
+      if (hitCover) {
+        gameAudio.play('blocked');
+        spawnBurst(p.mesh.position.clone(), 0xd9c5a3, 8, 2.6, 0.30, 0.075);
+      }
       scene.remove(p.mesh);
       projectiles.splice(i, 1);
       continue;
@@ -1554,6 +1650,7 @@ function removeBossWarning(mon) {
 
 function beginCharge(mon, telegraphTime = 0.85, color = 0xff3b30) {
   removeBossWarning(mon);
+  gameAudio.play('charge');
   mon.aiState = 'telegraph';
   mon.stateTimer = telegraphTime;
   mon.hasHitDuringCharge = false;
@@ -1650,6 +1747,9 @@ function updateGroundSlam(mon, dt) {
   if (mon.aiState === 'slamTelegraph') {
     if (mon.warningMesh?.material) mon.warningMesh.material.opacity = 0.32 + Math.sin(performance.now() * 0.022) * 0.18;
     if (mon.stateTimer <= 0) {
+      gameAudio.play('slam');
+      spawnBurst(mon.mesh.position.clone().add(new THREE.Vector3(0, 0.25, 0)), 0xff6b35, 38, 7.0, 0.65, 0.14);
+      addCameraShake(0.20, 0.32);
       if (dist < 6.4) damagePlayer(Math.floor(mon.atk * 1.8), mon.mesh.position, 2.4);
       removeBossWarning(mon);
       mon.aiState = 'slamRecovery';
@@ -1759,7 +1859,9 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   attackCooldown = Math.max(0, attackCooldown - dt);
   fallCooldown = Math.max(0, fallCooldown - dt);
+  footstepTimer = Math.max(0, footstepTimer - dt);
   mixers.forEach(controller => controller.mixer.update(dt));
+  updateVisualEffects(dt);
 
   const uiBlocking = !overlay.classList.contains('hidden') || !modal.classList.contains('hidden');
   if (uiBlocking) {
@@ -1823,11 +1925,25 @@ function animate() {
     playerGroup.position.z = THREE.MathUtils.clamp(playerGroup.position.z, -94, 94);
   }
 
+  if (moving && !state.falling && footstepTimer <= 0) {
+    gameAudio.play('footstep');
+    footstepTimer = 0.34;
+  }
   updatePlayerVisual(dt, moving && !state.falling);
 
   const offset = new THREE.Vector3(0, 7, 11);
   offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   camera.position.lerp(playerGroup.position.clone().add(offset), 0.1);
+  if (cameraShakeTime > 0) {
+    cameraShakeTime = Math.max(0, cameraShakeTime - dt);
+    const fade = cameraShakeTime > 0 ? 1 : 0;
+    camera.position.add(new THREE.Vector3(
+      (Math.random() - 0.5) * cameraShakeStrength * fade,
+      (Math.random() - 0.5) * cameraShakeStrength * 0.7 * fade,
+      (Math.random() - 0.5) * cameraShakeStrength * fade
+    ));
+    if (cameraShakeTime <= 0) cameraShakeStrength = 0;
+  }
   camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.4, playerGroup.position.z);
 
   monsters.forEach(mon => {
@@ -1940,7 +2056,29 @@ function animate() {
 }
 
 // ===================== BOOT =====================
+function updateAudioButtons() {
+  const musicBtn = $('music-toggle');
+  const sfxBtn = $('sfx-toggle');
+  if (musicBtn) musicBtn.textContent = gameAudio.musicEnabled ? '🎵 Music: On' : '🎵 Music: Off';
+  if (sfxBtn) sfxBtn.textContent = gameAudio.sfxEnabled ? '🔊 SFX: On' : '🔇 SFX: Off';
+}
+
 function init() {
+  updateAudioButtons();
+  $('music-toggle')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    await gameAudio.unlock();
+    gameAudio.toggleMusic();
+    updateAudioButtons();
+    gameAudio.play('ui');
+  });
+  $('sfx-toggle')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    await gameAudio.unlock();
+    gameAudio.toggleSfx();
+    updateAudioButtons();
+    gameAudio.play('ui');
+  });
   document.querySelectorAll('.avatar-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.avatar-btn').forEach(b => b.classList.remove('selected'));
@@ -1970,6 +2108,8 @@ function init() {
     if (uiBlocking) return;
     keys[e.code] = true;
     if (e.code === 'KeyH') usePotion();
+    if (e.code === 'KeyM') { gameAudio.toggleMusic(); updateAudioButtons(); }
+    if (e.code === 'KeyN') { gameAudio.toggleSfx(); updateAudioButtons(); }
     if (e.code === 'KeyT') tryInteract();
     if (e.code === 'KeyE') tryEnterPortal();
   });
@@ -1984,6 +2124,7 @@ function init() {
 }
 
 async function startGame(fromSave) {
+  await gameAudio.unlock();
   if (!fromSave) {
     state.player.name = $('username').value.trim() || 'Adventurer';
   }
@@ -1994,6 +2135,7 @@ async function startGame(fromSave) {
   clampPlayerProgression();
   await setupThree();
   await buildAct(state.currentAct);
+  gameAudio.setScene(state.currentAct, false);
   await spawnPlayer();
   if (fromSave && state.savedPosition) {
     const pos = state.savedPosition;

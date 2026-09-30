@@ -214,3 +214,29 @@ canvas { display: block; }
 }
 .overlay-panel h2 { color: #c9a227; margin-bottom: 0.8rem; }
 .overlay-panel p { color: #bbb; margin-bottom: 1.2rem; }
+
+
+/* ===== AUDIO CONTROLS ===== */
+#audio-controls {
+  position: absolute; left: 16px; bottom: 16px;
+  display: flex; gap: 8px; pointer-events: auto;
+}
+#audio-controls button {
+  background: rgba(10, 10, 20, 0.82);
+  border: 1px solid #3a3a5c;
+  color: #cfcfe6;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  backdrop-filter: blur(7px);
+}
+#audio-controls button:hover {
+  border-color: #c9a227;
+  color: #f0d060;
+}
+
+@media (max-width: 760px) {
+  #audio-controls { bottom: 52px; }
+  #controls-hint { max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+}

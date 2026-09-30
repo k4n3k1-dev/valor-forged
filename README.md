@@ -37,7 +37,9 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 | Hard level cap: 299 | ✅ |
 | Credits screen + CREDITS.md with verified embedded asset metadata | ✅ / some environment attribution still pending |
 | Automated gameplay-logic tests | ✅ |
-| Music / sound effects / audio ambience | 🚧 Intentionally left for later |
+| Music system + fallback dark cinematic bed | ✅ |
+| Procedural combat / UI / environment SFX | ✅ |
+| Act-specific ambience + boss audio mode | ✅ |
 
 ---
 
@@ -56,6 +58,16 @@ npm run build
 
 Open the URL shown by Vite (usually `http://localhost:5173`).
 
+### Audio note
+
+The game works immediately with built-in procedural music/ambience/SFX. If you have legal permission to use the requested commercial track, place it at:
+
+```text
+public/audio/music/dark-aria.mp3
+```
+
+The game detects it automatically; otherwise it falls back to the built-in original dark cinematic music bed.
+
 ---
 
 ## 🕹️ Controls
@@ -67,6 +79,8 @@ Open the URL shown by Vite (usually `http://localhost:5173`).
 | **H** | Use Health Potion (50% HP, max 10) |
 | **T** | Talk to NPC (Innkeeper / Weaponsmith / Alchemist) |
 | **E** | Enter glowing portal (Boss Room) |
+| **M** | Toggle music |
+| **N** | Toggle sound effects |
 
 ---
 
@@ -84,12 +98,13 @@ After defeating the Act 3 boss you enter **free-roam** mode. Normal enemies cont
 
 ## 📦 External Assets & Credits
 
-All third-party libraries, 3D models, textures and audio will be:
+All third-party libraries and 3D models are credited where source metadata is available. Audio is handled as follows:
 
-1. Selected by the developer
-2. Fully credited inside the in-game **Credits** screen (with URLs + licenses)
+1. Combat, UI and ambience SFX are original procedural Web Audio synthesis included in the code.
+2. The project looks for an optional licensed background file at `public/audio/music/dark-aria.mp3`. The commercial track itself is **not bundled**.
+3. If that file is absent, the game automatically uses an original dark-cinematic procedural music bed.
 
-The current build includes `CREDITS.md`, generated from author/source/license metadata embedded in the bundled GLB files. Some environment assets do not contain embedded attribution metadata, so those source details still need to be added manually before final submission.
+The build includes `CREDITS.md`, generated from author/source/license metadata embedded in the bundled GLB files. Some environment assets do not contain embedded attribution metadata, so those source details still need to be added manually before final submission.
 
 **Libraries in use**
 - Three.js (MIT)
@@ -121,7 +136,7 @@ Live URL will be:
 6. Act 2 forest + cover (done)
 7. Act 3 bridges + 3-phase boss (done)
 8. Gameplay polish, collision, tests and Credits (done)
-9. Audio polish — music / sound effects (left for later)
+9. Audio polish — music system, ambience and SFX (done)
 
 ---
 
@@ -136,4 +151,4 @@ After building (`npm run build`) simply upload the contents of the `dist/` folde
 
 MIT — feel free to fork, extend and credit the original concept.
 
-**Valor Forged** — Core gameplay and all three Acts are implemented. Audio polish remains for the later finishing pass.
+**Valor Forged** — Core gameplay, all three Acts, audio systems, visual feedback, tests and deployment workflow are implemented. Final user playtesting is the remaining step.

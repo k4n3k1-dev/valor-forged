@@ -38,8 +38,16 @@ This build finishes the remaining non-audio gameplay work from the current conce
 - Functional free roam after Act 3.
 - Hard level cap of 299.
 
-## Intentionally left for later
+## Remaining manual attribution note
 
-- Music.
-- Sound effects / ambience / voice / other audio polish.
-- Manual attribution for environment models whose GLB files do not contain embedded source/author/license metadata.
+- Some environment models still lack embedded source/author/license metadata, so their attribution cannot be reconstructed safely from the bundled files alone.
+
+## Final audio & polish pass
+
+- Added `src/audio.js` Web Audio director.
+- Added music/SFX toggles and M/N shortcuts.
+- Added procedural sword, impact, enemy, player, projectile, potion, coin, portal, boss, charge, slam, level-up, victory, footstep and UI sounds.
+- Added Act-specific procedural ambience and boss-mode ambience.
+- Added optional `public/audio/music/dark-aria.mp3` music slot with automatic original fallback music when absent.
+- Added hit/death/potion/portal/slam particle bursts and heavy-hit camera shake.
+- Changed the stylesheet URL to a relative path for safer subdirectory/GitHub Pages hosting.

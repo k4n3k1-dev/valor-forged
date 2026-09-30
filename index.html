@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Valor Forged — 3D Action RPG</title>
-  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
   <!-- Start Screen -->
@@ -36,6 +36,8 @@
       <ul class="credits-list">
         <li><strong>Three.js + GLTFLoader</strong> — MIT License</li>
         <li><strong>Vite</strong> — MIT License</li>
+        <li><strong>Game SFX & ambience:</strong> Original procedural Web Audio synthesis created for Valor Forged</li>
+        <li><strong>Background music slot:</strong> <code>public/audio/music/dark-aria.mp3</code> — user-supplied licensed file only; not bundled</li>
         <li><strong>Male player:</strong> “Anime boy male model T-pose base basic FREE” — ALexz.art — CC BY 4.0 — Sketchfab</li>
         <li><strong>Female player:</strong> “Low Poly Anime: Short-Haired 3D Girl Character” — Nusrat — CC BY 4.0 — Sketchfab</li>
         <li><strong>Slime:</strong> “Low Poly Slime Animated” — Pascal T. Monette — CC BY 4.0 — Sketchfab</li>
@@ -87,8 +89,12 @@
     <div id="minimap-wrap">
       <canvas id="minimap" width="160" height="160"></canvas>
     </div>
+    <div id="audio-controls">
+      <button id="music-toggle" type="button">🎵 Music: On</button>
+      <button id="sfx-toggle" type="button">🔊 SFX: On</button>
+    </div>
     <div id="controls-hint">
-      WASD / Arrows Move · Click Attack · H Potion · T Talk · E Portal
+      WASD / Arrows Move · Click Attack · H Potion · T Talk · E Portal · M Music · N SFX
     </div>
   </div>
 

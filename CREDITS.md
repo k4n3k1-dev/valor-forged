@@ -36,3 +36,10 @@ The entries below were extracted directly from metadata embedded in the bundled 
 ## Environment pack note
 
 Several environment GLB files (trees, pines, rocks, bushes, grass, fern, mushroom, dead tree) contain converter metadata but no embedded author/source/license fields. Their original source details still need to be added before final submission.
+
+
+## Audio
+
+- Combat, movement, potion, shop, UI, portal, boss, impact, death and environment sound effects — original procedural Web Audio synthesis created in `src/audio.js` for Valor Forged.
+- Act ambience and fallback dark-cinematic music bed — original procedural Web Audio synthesis created in `src/audio.js`.
+- Optional music slot: `public/audio/music/dark-aria.mp3`. No commercial recording is distributed with this project; only use a file there if you have the legal right/licence to do so.
