@@ -32,7 +32,10 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 | Simple localStorage save / load, including position | ✅ |
 | Death penalty: lose 10% gold and return to town | ✅ |
 | Mini-map with enemies, NPC/town markers, portal and facing arrow | ✅ |
-| Start screen (username + gender) | ✅ |
+| First-load splash + main menu + character creation | ✅ |
+| Opening story + Act transitions + ending story | ✅ |
+| Skippable five-step tutorial | ✅ |
+| In-game Esc/Menu controls + objective reference | ✅ |
 | Post-game free roam with recurring enemies | ✅ |
 | Hard level cap: 299 | ✅ |
 | Credits screen + CREDITS.md with verified embedded asset metadata | ✅ / some environment attribution still pending |
@@ -81,6 +84,7 @@ The game detects it automatically; otherwise it falls back to the built-in origi
 | **E** | Enter glowing portal (Boss Room) |
 | **M** | Toggle music |
 | **N** | Toggle sound effects |
+| **Esc** | Open / close the in-game menu |
 
 ---
 
@@ -137,6 +141,7 @@ Live URL will be:
 7. Act 3 bridges + 3-phase boss (done)
 8. Gameplay polish, collision, tests and Credits (done)
 9. Audio polish — music system, ambience and SFX (done)
+10. Story, tutorial, objective guidance and in-game menu (done)
 
 ---
 
@@ -151,4 +156,4 @@ After building (`npm run build`) simply upload the contents of the `dist/` folde
 
 MIT — feel free to fork, extend and credit the original concept.
 
-**Valor Forged** — Core gameplay, all three Acts, audio systems, visual feedback, tests and deployment workflow are implemented. Final user playtesting is the remaining step.
+**Valor Forged** — Core gameplay, all three Acts, story flow, skippable tutorial, in-game controls menu, audio systems, visual feedback, tests and deployment workflow are implemented. Final user playtesting is the remaining step.

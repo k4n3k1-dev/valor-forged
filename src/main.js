@@ -53,6 +53,98 @@ const ACT = {
   }
 };
 
+const OPENING_STORY = [
+  {
+    kicker: 'Prologue · The Fracture',
+    title: 'When the Three Regions Fell Silent',
+    text: 'Verdant Valley, Shadowgrove Forest, and Highland Citadel were once bound by the Valor Flame — an ancient force that kept the realm in balance. Then the Flame shattered. Its three shards were claimed by powerful guardians, and the land around each shard began to change.'
+  },
+  {
+    kicker: 'Prologue · The Guardians',
+    title: 'Power Without Balance',
+    text: 'The Valley guardian turned the wilds hostile. Shadowgrove vanished beneath unnatural darkness. In the highlands, stone and ruin awakened around the Citadel. No army could cross all three regions, and every failed challenge made the guardians stronger.'
+  },
+  {
+    kicker: 'Prologue · Your Oath',
+    title: 'A New Adventurer Answers',
+    text: 'You enter the realm with little more than a worn blade. To survive, you must fight, earn XP and gold, strengthen your equipment, and master each region. Defeat all three guardians, reclaim the shards of Valor, and restore what was broken.'
+  }
+];
+
+const ACT_TRANSITIONS = {
+  1: [
+    {
+      kicker: 'Act I Complete',
+      title: 'The First Shard',
+      text: 'The Valley Guardian falls. A golden shard rises from the battlefield and answers your touch. For the first time in years, the winds over Verdant Valley grow calm.'
+    },
+    {
+      kicker: 'Act II · Shadowgrove Forest',
+      title: 'Into the Dark',
+      text: 'The shard points toward Shadowgrove, where the second guardian commands the forest from behind a veil of fog and fire. Close combat alone will not be enough. Use the trees as cover, watch the skies, and keep moving.'
+    }
+  ],
+  2: [
+    {
+      kicker: 'Act II Complete',
+      title: 'The Second Shard',
+      text: 'The fire over Shadowgrove fades. The second shard joins the first, revealing an ancient path into the mountains — a road that has been hidden since the Fracture.'
+    },
+    {
+      kicker: 'Act III · Highland Citadel',
+      title: 'The Last Ascent',
+      text: 'The final shard waits inside Highland Citadel. Broken bridges hang over the void, stone guardians patrol the ruins, and the Citadel Titan guards the heart of the fortress. One careless step can end the climb.'
+    }
+  ]
+};
+
+const ENDING_STORY = [
+  {
+    kicker: 'Finale · The Third Shard',
+    title: 'The Titan Falls',
+    text: 'The Citadel Titan collapses and the final shard breaks free. For a moment the highlands are silent. Then all three shards begin to resonate, answering one another across the realm.'
+  },
+  {
+    kicker: 'Finale · Valor Restored',
+    title: 'The Flame Rekindled',
+    text: 'The shards reunite and the Valor Flame burns again. The corruption does not vanish in an instant, but its grip is broken. Roads reopen. The fog thins. The monsters that remain are no longer an unstoppable tide.'
+  },
+  {
+    kicker: 'Epilogue',
+    title: 'Your Legend Continues',
+    text: 'The three guardians are defeated, but your journey does not have to end. The restored realm is open to you. Hunt the remaining monsters, perfect your strength, and continue your legend all the way to Level 299.'
+  }
+];
+
+const TUTORIAL_STEPS = [
+  {
+    icon: '⌨️',
+    title: 'Move & Explore',
+    text: 'Use WASD or the Arrow Keys to move. The camera follows behind your character. Explore each Act, watch the minimap, and use movement to dodge enemy and boss attacks.'
+  },
+  {
+    icon: '⚔️',
+    title: 'Fight & Survive',
+    text: 'Click an enemy while you are close enough to attack. Watch your HP in the top-left HUD. Press H to drink a health potion and restore 50% HP. Hit enemies, avoid their attacks, and do not let your HP reach zero.'
+  },
+  {
+    icon: '✨',
+    title: 'Grow Stronger',
+    text: 'Defeated monsters award XP and gold. Level up to increase your strength. Spend gold at the Weaponsmith for stronger weapons and at the Alchemist for potions. Rest at the Inn to restore HP and save.'
+  },
+  {
+    icon: '🧭',
+    title: 'NPCs, Portals & Bosses',
+    text: 'Press T near an NPC to talk or shop. Follow the minimap and look for the glowing boss portal. Press E near a portal to enter. Boss rooms unlock at Level 40, 120, and 200.'
+  },
+  {
+    icon: '🏆',
+    title: 'Your Goal',
+    text: 'Defeat the guardian of each Act and reclaim all three Valor shards. Each region teaches a different skill: dodge in Act I, use cover in Act II, and master bridges, resources, and boss phases in Act III. Press Esc at any time to reopen the menu and review the controls.'
+  }
+];
+
+
 const WEAPONS = [
   { name: 'Rusty Sword', atk: 12, price: 0, req: 1 },
   { name: 'Iron Blade', atk: 22, price: 80, req: 8 },
@@ -158,16 +250,157 @@ let footstepTimer = 0;
 let visualEffects = [];
 let cameraShakeTime = 0;
 let cameraShakeStrength = 0;
+let storySequence = null;
+let tutorialIndex = 0;
+let tutorialCompleteCallback = null;
+let controlsReturnId = 'start-screen';
+let creditsReturnId = 'start-screen';
 
 // ===================== DOM =====================
 const $ = id => document.getElementById(id);
+const bootScreen = $('boot-screen');
 const startScreen = $('start-screen');
+const characterScreen = $('character-screen');
+const storyScreen = $('story-screen');
+const tutorialScreen = $('tutorial-screen');
+const controlsScreen = $('controls-screen');
+const gameMenu = $('game-menu');
 const creditsScreen = $('credits-screen');
 const hud = $('hud');
 const loading = $('loading');
 const modal = $('modal');
 const overlay = $('overlay');
 const contextPrompt = $('context-prompt');
+
+function currentObjectiveText() {
+  if (state.freeRoam) return `Free roam: keep fighting, exploring, and growing toward Level ${MAX_LEVEL}.`;
+  if (state.inBossRoom) return `Defeat the Act ${state.currentAct} guardian.`;
+  const req = ACT[state.currentAct].bossReq;
+  if (state.player.level < req) return `Reach Level ${req}, then find the glowing boss portal.`;
+  return `Find the glowing boss portal and press E to challenge the Act ${state.currentAct} guardian.`;
+}
+
+function isUIBlocking() {
+  return [overlay, modal, storyScreen, tutorialScreen, controlsScreen, gameMenu, creditsScreen, loading]
+    .some(el => el && !el.classList.contains('hidden'));
+}
+
+function hideScreen(id) {
+  const el = $(id);
+  if (el) el.classList.add('hidden');
+}
+
+function showScreen(id) {
+  const el = $(id);
+  if (el) el.classList.remove('hidden');
+}
+
+function renderStoryPage() {
+  if (!storySequence) return;
+  const { pages, index, allowSkip } = storySequence;
+  const page = pages[index];
+  $('story-kicker').textContent = page.kicker || 'Story';
+  $('story-title').textContent = page.title;
+  $('story-text').textContent = page.text;
+  $('story-progress').textContent = `${index + 1} / ${pages.length}`;
+  $('story-next').textContent = index === pages.length - 1 ? (storySequence.finalLabel || 'Continue') : 'Continue';
+  $('story-skip').classList.toggle('hidden', !allowSkip || pages.length <= 1);
+}
+
+function showStorySequence(pages, options = {}) {
+  storySequence = {
+    pages,
+    index: 0,
+    onComplete: options.onComplete || null,
+    allowSkip: options.allowSkip !== false,
+    finalLabel: options.finalLabel || 'Continue'
+  };
+  keys = {};
+  storyScreen.classList.remove('hidden');
+  renderStoryPage();
+}
+
+async function finishStorySequence() {
+  if (!storySequence) return;
+  const cb = storySequence.onComplete;
+  storySequence = null;
+  storyScreen.classList.add('hidden');
+  if (cb) await cb();
+}
+
+function advanceStory() {
+  if (!storySequence) return;
+  gameAudio.play('ui');
+  if (storySequence.index < storySequence.pages.length - 1) {
+    storySequence.index++;
+    renderStoryPage();
+  } else {
+    finishStorySequence();
+  }
+}
+
+function renderTutorial() {
+  const step = TUTORIAL_STEPS[tutorialIndex];
+  $('tutorial-title').textContent = step.title;
+  $('tutorial-icon').textContent = step.icon;
+  $('tutorial-text').textContent = step.text;
+  $('tutorial-progress').textContent = `${tutorialIndex + 1} / ${TUTORIAL_STEPS.length}`;
+  $('tutorial-back').disabled = tutorialIndex === 0;
+  $('tutorial-next').textContent = tutorialIndex === TUTORIAL_STEPS.length - 1 ? 'Begin Act I' : 'Next';
+}
+
+function showTutorial(onComplete) {
+  tutorialIndex = 0;
+  tutorialCompleteCallback = onComplete;
+  tutorialScreen.classList.remove('hidden');
+  renderTutorial();
+}
+
+async function finishTutorial() {
+  const cb = tutorialCompleteCallback;
+  tutorialCompleteCallback = null;
+  tutorialScreen.classList.add('hidden');
+  if (cb) await cb();
+}
+
+function openControls(returnId) {
+  controlsReturnId = returnId || 'start-screen';
+  hideScreen(controlsReturnId);
+  showScreen('controls-screen');
+  keys = {};
+}
+
+function closeControls() {
+  hideScreen('controls-screen');
+  showScreen(controlsReturnId);
+}
+
+function openCredits(returnId) {
+  creditsReturnId = returnId || 'start-screen';
+  hideScreen(creditsReturnId);
+  showScreen('credits-screen');
+  keys = {};
+}
+
+function closeCredits() {
+  hideScreen('credits-screen');
+  showScreen(creditsReturnId);
+}
+
+function openGameMenu() {
+  if (!playerGroup || state.isDead || !overlay.classList.contains('hidden') || !modal.classList.contains('hidden') || !storyScreen.classList.contains('hidden')) return;
+  $('menu-objective-text').textContent = currentObjectiveText();
+  gameMenu.classList.remove('hidden');
+  keys = {};
+  gameAudio.play('ui');
+}
+
+function closeGameMenu() {
+  if (gameMenu.classList.contains('hidden')) return;
+  gameMenu.classList.add('hidden');
+  keys = {};
+  gameAudio.play('ui');
+}
 
 // ===================== UTILS =====================
 function clampPlayerProgression() {
@@ -336,6 +569,8 @@ function updateHUD() {
   $('hud-potions').textContent = p.potions;
   $('hud-act').textContent = state.currentAct;
   $('hud-act-name').textContent = state.freeRoam ? `${ACT[state.currentAct].name} · Free Roam` : ACT[state.currentAct].name;
+  const objectiveEl = $('hud-objective');
+  if (objectiveEl) objectiveEl.textContent = `Objective: ${currentObjectiveText()}`;
   const hpPct = Math.max(0, p.hp / p.maxHp * 100);
   $('hp-fill').style.width = hpPct + '%';
   $('hp-text').textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
@@ -1073,8 +1308,8 @@ async function spawnBossPortal(actNum) {
 // ===================== COMBAT & SYSTEMS =====================
 function onClickAttack(e) {
   if (state.isDead || state.falling || attackCooldown > 0 || !playerGroup) return;
-  if (modal.classList.contains('hidden') === false) return;
-  if (overlay.classList.contains('hidden') === false) return;
+  if (e.target?.closest?.('button, input, .screen-layer, #modal, #overlay')) return;
+  if (isUIBlocking()) return;
 
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -1191,20 +1426,31 @@ function onMonsterDeath(mon) {
   clearProjectiles();
   clearBossArena();
 
-  showOverlay('Boss Defeated!', `Act ${defeatedAct} boss has fallen. The path forward opens.`, async () => {
+  saveGame();
+  showOverlay('Boss Defeated!', `Act ${defeatedAct} guardian has fallen. A shard of Valor answers your victory.`, () => {
     if (defeatedAct < 3) {
-      state.currentAct = defeatedAct + 1;
-      state.player.act = state.currentAct;
-      state.freeRoam = false;
-      await rebuildWorld();
-      saveGame();
+      showStorySequence(ACT_TRANSITIONS[defeatedAct], {
+        finalLabel: `Enter Act ${defeatedAct + 1}`,
+        onComplete: async () => {
+          state.currentAct = defeatedAct + 1;
+          state.player.act = state.currentAct;
+          state.freeRoam = false;
+          await rebuildWorld();
+          saveGame();
+        }
+      });
     } else {
-      state.freeRoam = true;
-      state.currentAct = 3;
-      state.player.act = 3;
-      await rebuildWorld();
-      saveGame();
-      showOverlay('Victory!', `All three Acts are complete. Free roam is unlocked; keep fighting and level up to ${MAX_LEVEL}.`, () => {});
+      showStorySequence(ENDING_STORY, {
+        finalLabel: 'Enter Free Roam',
+        onComplete: async () => {
+          state.freeRoam = true;
+          state.currentAct = 3;
+          state.player.act = 3;
+          await rebuildWorld();
+          saveGame();
+          showOverlay('Victory!', `The Valor Flame is restored. Free roam is unlocked; continue your legend to Level ${MAX_LEVEL}.`, () => {});
+        }
+      });
     }
   });
 
@@ -1451,6 +1697,7 @@ async function tryEnterPortal() {
       gameAudio.play('portal');
       spawnBurst(p.position.clone(), 0x9b5cff, 30, 4.8, 0.8, 0.13);
       state.inBossRoom = true;
+      updateHUD();
       gameAudio.setScene(state.currentAct, true);
       worldGeneration++;
       monsters.forEach(m => scene.remove(m.mesh));
@@ -1863,7 +2110,7 @@ function animate() {
   mixers.forEach(controller => controller.mixer.update(dt));
   updateVisualEffects(dt);
 
-  const uiBlocking = !overlay.classList.contains('hidden') || !modal.classList.contains('hidden');
+  const uiBlocking = isUIBlocking();
   if (uiBlocking) {
     drawMinimap();
     renderer.render(scene, camera);
@@ -2065,6 +2312,16 @@ function updateAudioButtons() {
 
 function init() {
   updateAudioButtons();
+
+  // A short first-load splash makes the transition into the main menu intentional.
+  setTimeout(() => {
+    bootScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    const hasSave = Boolean(localStorage.getItem('valorForgedSave'));
+    $('load-btn').disabled = !hasSave;
+    $('load-btn').title = hasSave ? 'Continue your saved adventure' : 'No save found yet';
+  }, 900);
+
   $('music-toggle')?.addEventListener('click', async e => {
     e.stopPropagation();
     await gameAudio.unlock();
@@ -2079,33 +2336,110 @@ function init() {
     updateAudioButtons();
     gameAudio.play('ui');
   });
+
   document.querySelectorAll('.avatar-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.avatar-btn').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       state.player.gender = btn.dataset.gender;
+      gameAudio.play('ui');
     });
   });
 
-  $('start-btn').addEventListener('click', () => startGame(false));
-  $('load-btn').addEventListener('click', () => {
+  $('start-btn').addEventListener('click', async () => {
+    await gameAudio.unlock();
+    startScreen.classList.add('hidden');
+    showStorySequence(OPENING_STORY, {
+      finalLabel: 'Create Adventurer',
+      onComplete: () => characterScreen.classList.remove('hidden')
+    });
+  });
+
+  $('load-btn').addEventListener('click', async () => {
+    await gameAudio.unlock();
     if (loadGame()) startGame(true);
     else alert('No save found.');
   });
-  $('credits-btn').addEventListener('click', () => {
-    startScreen.classList.add('hidden');
-    creditsScreen.classList.remove('hidden');
+
+  $('character-continue').addEventListener('click', () => {
+    state.player.name = $('username').value.trim() || 'Adventurer';
+    characterScreen.classList.add('hidden');
+    showTutorial(() => startGame(false));
   });
-  $('close-credits').addEventListener('click', () => {
-    creditsScreen.classList.add('hidden');
+  $('character-back').addEventListener('click', () => {
+    characterScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
   });
+
+  $('story-next').addEventListener('click', advanceStory);
+  $('story-skip').addEventListener('click', () => {
+    gameAudio.play('ui');
+    finishStorySequence();
+  });
+
+  $('tutorial-next').addEventListener('click', () => {
+    gameAudio.play('ui');
+    if (tutorialIndex < TUTORIAL_STEPS.length - 1) {
+      tutorialIndex++;
+      renderTutorial();
+    } else {
+      finishTutorial();
+    }
+  });
+  $('tutorial-back').addEventListener('click', () => {
+    if (tutorialIndex <= 0) return;
+    gameAudio.play('ui');
+    tutorialIndex--;
+    renderTutorial();
+  });
+  $('tutorial-skip').addEventListener('click', () => {
+    gameAudio.play('ui');
+    finishTutorial();
+  });
+
+  $('main-controls-btn').addEventListener('click', () => openControls('start-screen'));
+  $('game-controls-btn').addEventListener('click', () => openControls('game-menu'));
+  $('close-controls').addEventListener('click', closeControls);
+
+  $('credits-btn').addEventListener('click', () => openCredits('start-screen'));
+  $('menu-credits-btn').addEventListener('click', () => openCredits('game-menu'));
+  $('close-credits').addEventListener('click', closeCredits);
+
+  $('menu-open').addEventListener('click', e => {
+    e.stopPropagation();
+    openGameMenu();
+  });
+  $('resume-btn').addEventListener('click', closeGameMenu);
+  $('main-menu-btn').addEventListener('click', () => {
+    saveGame();
+    location.reload();
+  });
+
   $('modal-close').addEventListener('click', closeModal);
 
   window.addEventListener('keydown', e => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-    const uiBlocking = !overlay.classList.contains('hidden') || !modal.classList.contains('hidden');
-    if (uiBlocking) return;
+
+    if (e.code === 'Escape') {
+      if (!controlsScreen.classList.contains('hidden')) {
+        closeControls();
+        return;
+      }
+      if (!creditsScreen.classList.contains('hidden') && creditsReturnId === 'game-menu') {
+        closeCredits();
+        return;
+      }
+      if (!gameMenu.classList.contains('hidden')) {
+        closeGameMenu();
+        return;
+      }
+      if (playerGroup && isUIBlocking() === false) {
+        openGameMenu();
+        return;
+      }
+    }
+
+    if (isUIBlocking()) return;
     keys[e.code] = true;
     if (e.code === 'KeyH') usePotion();
     if (e.code === 'KeyM') { gameAudio.toggleMusic(); updateAudioButtons(); }
@@ -2126,9 +2460,12 @@ function init() {
 async function startGame(fromSave) {
   await gameAudio.unlock();
   if (!fromSave) {
-    state.player.name = $('username').value.trim() || 'Adventurer';
+    state.player.name = $('username').value.trim() || state.player.name || 'Adventurer';
   }
   startScreen.classList.add('hidden');
+  characterScreen.classList.add('hidden');
+  tutorialScreen.classList.add('hidden');
+  storyScreen.classList.add('hidden');
   loading.classList.remove('hidden');
   $('loading-text').textContent = 'Loading models...';
 

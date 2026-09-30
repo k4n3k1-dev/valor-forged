@@ -51,3 +51,14 @@ This build finishes the remaining non-audio gameplay work from the current conce
 - Added optional `public/audio/music/dark-aria.mp3` music slot with automatic original fallback music when absent.
 - Added hit/death/potion/portal/slam particle bursts and heavy-hit camera shake.
 - Changed the stylesheet URL to a relative path for safer subdirectory/GitHub Pages hosting.
+
+## Story, Tutorial & Menu Pass
+- Added a first-load Valor Forged boot/loading splash.
+- Added a main menu with New Adventure, Continue, Controls and Credits.
+- Added a three-part opening story explaining the Fracture, the three guardians and the player's purpose.
+- Added character creation after the prologue.
+- Added a five-step skippable tutorial covering movement, combat, potions, progression, NPCs, portals, boss requirements and the overall goal.
+- Added Act I→II and Act II→III story transitions.
+- Added a three-part ending/epilogue before free roam.
+- Added an always-available in-game menu on Esc / HUD Menu with current objective, Controls, Credits, Resume and Save & Return to Main Menu.
+- Added a persistent HUD objective line.

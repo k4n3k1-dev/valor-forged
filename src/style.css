@@ -240,3 +240,191 @@ canvas { display: block; }
   #audio-controls { bottom: 52px; }
   #controls-hint { max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* ===== STORY / MENU / TUTORIAL LAYER ===== */
+.screen-layer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(62, 50, 96, 0.34), transparent 42%),
+    linear-gradient(180deg, rgba(7, 7, 14, 0.96), rgba(7, 7, 14, 0.99));
+  z-index: 100;
+  padding: 20px;
+}
+
+#boot-screen { z-index: 130; }
+.boot-loader h1 {
+  color: #f0d060;
+  margin-bottom: 1.6rem;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 24px rgba(240, 208, 96, 0.22);
+}
+.boot-loader p { color: #9292aa; letter-spacing: 0.06em; }
+
+.menu-lore {
+  color: #b4b4c7;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin: -0.6rem auto 1.4rem;
+  max-width: 420px;
+}
+
+.narrative-layer {
+  background:
+    linear-gradient(rgba(4, 4, 9, 0.73), rgba(4, 4, 9, 0.94)),
+    radial-gradient(circle at center, #28213c 0%, #090910 72%);
+}
+
+.story-panel,
+.tutorial-panel,
+.controls-panel,
+.game-menu-panel {
+  width: min(680px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(22, 22, 40, 0.98), rgba(13, 13, 27, 0.98));
+  border: 1px solid #4a4164;
+  border-radius: 18px;
+  padding: 2.2rem 2.4rem;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.62), 0 0 42px rgba(201, 162, 39, 0.07);
+}
+
+.story-panel { text-align: left; }
+.story-panel h2,
+.tutorial-panel h2,
+.controls-panel h2,
+.game-menu-panel h2 {
+  color: #f0d060;
+  margin: 0.3rem 0 1rem;
+  font-size: 1.8rem;
+}
+.story-kicker {
+  color: #8d82ad;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+#story-text,
+#tutorial-text {
+  color: #cacadd;
+  line-height: 1.75;
+  font-size: 1rem;
+  min-height: 110px;
+  white-space: pre-line;
+}
+.story-progress {
+  color: #77778e;
+  font-size: 0.75rem;
+  margin-top: 1.2rem;
+}
+.story-actions,
+.tutorial-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 1rem;
+}
+.compact-btn { width: auto; min-width: 130px; flex: 1; }
+
+.tutorial-panel { text-align: center; }
+.tutorial-icon {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  margin: 0.6rem auto 1.1rem;
+  border: 1px solid #4b4263;
+  border-radius: 18px;
+  background: #111122;
+  font-size: 2rem;
+}
+
+.controls-panel { width: min(820px, 94vw); }
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 1.1rem 0;
+}
+.control-card {
+  display: grid;
+  grid-template-columns: minmax(112px, auto) 1fr;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 10px;
+  background: #101020;
+  border: 1px solid #2e2e48;
+}
+.control-card strong { color: #e8e8f0; }
+.control-card small { grid-column: 2; color: #85859b; line-height: 1.35; }
+.control-key {
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 8px;
+  background: #24223a;
+  border: 1px solid #54506e;
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  color: #f0d060;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.goal-box,
+.menu-objective {
+  margin: 1rem 0;
+  padding: 14px 16px;
+  background: rgba(201, 162, 39, 0.08);
+  border: 1px solid rgba(201, 162, 39, 0.28);
+  border-radius: 10px;
+}
+.goal-box strong { color: #f0d060; }
+.goal-box p,
+.menu-objective p { color: #bdbdd0; line-height: 1.55; margin-top: 5px; }
+.menu-objective small { color: #8e849f; text-transform: uppercase; letter-spacing: 0.12em; }
+
+.menu-layer { background: rgba(5, 5, 11, 0.82); backdrop-filter: blur(6px); z-index: 95; }
+.game-menu-panel { width: min(430px, 92vw); text-align: center; }
+
+.objective-row {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  color: #c4ad63;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  max-width: 310px;
+}
+
+#menu-open {
+  position: absolute;
+  top: 188px;
+  right: 16px;
+  pointer-events: auto;
+  background: rgba(10, 10, 20, 0.86);
+  border: 1px solid #3a3a5c;
+  color: #d6d6e4;
+  border-radius: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  backdrop-filter: blur(7px);
+}
+#menu-open:hover { color: #f0d060; border-color: #c9a227; }
+
+@media (max-width: 760px) {
+  .screen-layer { padding: 10px; }
+  .story-panel, .tutorial-panel, .controls-panel, .game-menu-panel { padding: 1.5rem 1.2rem; }
+  .controls-grid { grid-template-columns: 1fr; }
+  .story-actions, .tutorial-actions { flex-wrap: wrap; }
+  .compact-btn { min-width: 42%; }
+  #menu-open { top: 188px; right: 16px; }
+  #player-info { min-width: 210px; max-width: calc(100vw - 190px); }
+  .objective-row { max-width: 240px; }
+}

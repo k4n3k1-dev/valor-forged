@@ -2,8 +2,17 @@
 
 Run `npm install`, then `npm run dev` and play normally.
 
+## First Load / Story / Tutorial
+- Confirm the first-load “Forging the realm...” splash appears before the main menu.
+- Start New Adventure and read/skip the three-part opening story.
+- Create a name/avatar and confirm the five-step tutorial appears.
+- Use Back / Next and Skip Tutorial; both routes should enter Act I correctly.
+- During gameplay press `Esc` or click `☰ Menu`; confirm Resume, Controls, Credits, objective, and Save & Return to Main Menu work.
+- Defeat Act 1 and Act 2 bosses and confirm the story transition into the next Act appears.
+- Defeat Act 3 and confirm the ending story appears before free roam.
+
 ## Start / Audio
-- Start a new game and confirm music/ambience begins after clicking Begin Adventure.
+- Start a new game and confirm music/ambience begins after entering the adventure.
 - Toggle Music with `M` or the HUD button.
 - Toggle SFX with `N` or the HUD button.
 - If `public/audio/music/dark-aria.mp3` is absent, confirm the built-in dark cinematic fallback is audible.

@@ -7,11 +7,48 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <!-- Start Screen -->
-  <div id="start-screen">
+  <!-- First-load boot splash -->
+  <div id="boot-screen" class="screen-layer">
+    <div class="loader boot-loader">
+      <h1>⚔️ Valor Forged</h1>
+      <div class="spinner"></div>
+      <p id="boot-text">Forging the realm...</p>
+    </div>
+  </div>
+
+  <!-- Main Menu -->
+  <div id="start-screen" class="hidden screen-layer">
     <div class="start-panel">
       <h1>⚔️ Valor Forged</h1>
-      <p class="tagline">Three Acts. One Legend.</p>
+      <p class="tagline">Three Acts. Three Guardians. One Legend.</p>
+      <p class="menu-lore">The three regions have fallen out of balance. Reclaim the lost shards of Valor and restore the realm.</p>
+      <button id="start-btn" class="primary-btn">New Adventure</button>
+      <button id="load-btn" class="secondary-btn">Continue Save</button>
+      <button id="main-controls-btn" class="secondary-btn">Controls</button>
+      <button id="credits-btn" class="secondary-btn">Credits</button>
+    </div>
+  </div>
+
+  <!-- Opening / transition / ending story -->
+  <div id="story-screen" class="hidden screen-layer narrative-layer">
+    <div class="story-panel">
+      <div id="story-kicker" class="story-kicker">Prologue</div>
+      <h2 id="story-title">The Fracture</h2>
+      <p id="story-text"></p>
+      <div id="story-progress" class="story-progress"></div>
+      <div class="story-actions">
+        <button id="story-skip" class="secondary-btn compact-btn">Skip</button>
+        <button id="story-next" class="primary-btn compact-btn">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Character Setup -->
+  <div id="character-screen" class="hidden screen-layer">
+    <div class="start-panel">
+      <div class="story-kicker">Create Your Adventurer</div>
+      <h1>Choose Your Legend</h1>
+      <p class="tagline">Your name and avatar will be stored with your save.</p>
       <div class="form-group">
         <label for="username">Adventurer Name</label>
         <input type="text" id="username" placeholder="Enter your name" maxlength="16" value="Kirito" />
@@ -23,14 +60,67 @@
           <button class="avatar-btn" data-gender="female">Female</button>
         </div>
       </div>
-      <button id="start-btn" class="primary-btn">Begin Adventure</button>
-      <button id="load-btn" class="secondary-btn">Continue Save</button>
-      <button id="credits-btn" class="secondary-btn">Credits</button>
+      <button id="character-continue" class="primary-btn">Continue to Tutorial</button>
+      <button id="character-back" class="secondary-btn">Back to Main Menu</button>
+    </div>
+  </div>
+
+  <!-- Skippable Tutorial -->
+  <div id="tutorial-screen" class="hidden screen-layer narrative-layer">
+    <div class="tutorial-panel">
+      <div class="story-kicker">Adventurer Training</div>
+      <h2 id="tutorial-title">Movement</h2>
+      <div id="tutorial-icon" class="tutorial-icon">⌨️</div>
+      <p id="tutorial-text"></p>
+      <div id="tutorial-progress" class="story-progress"></div>
+      <div class="tutorial-actions">
+        <button id="tutorial-back" class="secondary-btn compact-btn">Back</button>
+        <button id="tutorial-skip" class="secondary-btn compact-btn">Skip Tutorial</button>
+        <button id="tutorial-next" class="primary-btn compact-btn">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls reference -->
+  <div id="controls-screen" class="hidden screen-layer">
+    <div class="controls-panel">
+      <div class="story-kicker">Reference</div>
+      <h2>Controls & Goal</h2>
+      <div class="controls-grid">
+        <div class="control-card"><span class="control-key">WASD / ↑↓←→</span><strong>Move</strong><small>Explore, dodge and reposition.</small></div>
+        <div class="control-card"><span class="control-key">Click</span><strong>Attack</strong><small>Click an enemy while in melee range.</small></div>
+        <div class="control-card"><span class="control-key">H</span><strong>Health Potion</strong><small>Restore 50% HP. Carry up to 10.</small></div>
+        <div class="control-card"><span class="control-key">T</span><strong>Talk / Shop</strong><small>Interact with nearby NPCs and the Inn.</small></div>
+        <div class="control-card"><span class="control-key">E</span><strong>Enter Portal</strong><small>Enter a boss room when you meet its level requirement.</small></div>
+        <div class="control-card"><span class="control-key">Esc</span><strong>Menu</strong><small>Pause and review controls or your objective.</small></div>
+        <div class="control-card"><span class="control-key">M / N</span><strong>Music / SFX</strong><small>Toggle music or sound effects.</small></div>
+      </div>
+      <div class="goal-box">
+        <strong>Your Goal</strong>
+        <p>Fight monsters, gain XP and gold, improve your equipment, defeat the guardian of each Act, restore all three Valor shards, then continue in free roam up to Level 299.</p>
+      </div>
+      <button id="close-controls" class="primary-btn">Back</button>
+    </div>
+  </div>
+
+  <!-- In-game pause/menu -->
+  <div id="game-menu" class="hidden screen-layer menu-layer">
+    <div class="game-menu-panel">
+      <div class="story-kicker">Paused</div>
+      <h2>Valor Forged</h2>
+      <div class="menu-objective">
+        <small>Current Objective</small>
+        <p id="menu-objective-text">Continue your journey.</p>
+      </div>
+      <button id="resume-btn" class="primary-btn">Resume</button>
+      <button id="game-controls-btn" class="secondary-btn">Controls</button>
+      <button id="menu-credits-btn" class="secondary-btn">Credits</button>
+      <button id="main-menu-btn" class="secondary-btn">Save & Return to Main Menu</button>
     </div>
   </div>
 
   <!-- Credits -->
-  <div id="credits-screen" class="hidden">
+  <div id="credits-screen" class="hidden screen-layer">
     <div class="credits-panel">
       <h2>Credits & Assets</h2>
       <ul class="credits-list">
@@ -57,7 +147,7 @@
     </div>
   </div>
 
-  <!-- Loading -->
+  <!-- Loading between menu/game/Acts -->
   <div id="loading" class="hidden">
     <div class="loader">
       <div class="spinner"></div>
@@ -85,16 +175,18 @@
         <span>🧪 <span id="hud-potions">3</span>/10</span>
       </div>
       <div class="act-row">Act <span id="hud-act">1</span> — <span id="hud-act-name">Verdant Valley</span></div>
+      <div id="hud-objective" class="objective-row">Objective: Reach Lv 40 and defeat the Valley Guardian.</div>
     </div>
     <div id="minimap-wrap">
       <canvas id="minimap" width="160" height="160"></canvas>
     </div>
+    <button id="menu-open" type="button" aria-label="Open game menu">☰ Menu</button>
     <div id="audio-controls">
       <button id="music-toggle" type="button">🎵 Music: On</button>
       <button id="sfx-toggle" type="button">🔊 SFX: On</button>
     </div>
     <div id="controls-hint">
-      WASD / Arrows Move · Click Attack · H Potion · T Talk · E Portal · M Music · N SFX
+      WASD / Arrows Move · Click Attack · H Potion · T Talk · E Portal · Esc Menu
     </div>
   </div>
 
