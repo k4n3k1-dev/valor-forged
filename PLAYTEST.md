@@ -54,3 +54,18 @@ Run `npm install`, then `npm run dev` and play normally.
 - Open Credits from the start screen.
 - `npm test` should report 7 passing tests.
 - `npm run build` should produce `dist/` for deployment once dependencies are installed.
+
+## Character / world quality checks
+
+During the next browser playthrough, specifically verify:
+
+- The selected player loads as the rigged KayKit Knight/Rogue rather than the old black T-pose model.
+- Idle and movement visibly animate the skeleton (hips, knees, legs and arms), and clicking an enemy triggers a melee attack clip.
+- A sword is visibly attached to the player’s right hand during movement and combat.
+- Act I/II guardian models animate rather than sliding as static meshes.
+- Trees/foliage no longer create giant opaque black cards over the screen.
+- The camera pulls forward instead of clipping through a tree or building.
+- Houses/shops remain upright and large environment props no longer appear to be fallen buildings.
+- Melee enemies cannot damage the player through a solid tree/building/ruin.
+- When damage comes from off-screen, the red directional indicator points toward the attacker.
+- Verdant Valley and Shadowgrove show their roads, town dressing, foliage clusters, rocks, water feature and distant terrain rather than only a flat ground plane.

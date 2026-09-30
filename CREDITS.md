@@ -1,5 +1,11 @@
 # Valor Forged — Asset Credits
 
+## Advanced animated character rigs used by the current build
+
+- **KayKit Character Pack: Adventurers** — Knight (male player) and Rogue (female player), by **Kay Lousberg / KayKit**. Fully rigged and animated; CC0 1.0 Universal. Official source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+- **KayKit Character Pack: Skeletons** — Skeleton Warrior (Act I guardian) and Skeleton Mage (Act II guardian), by **Kay Lousberg / KayKit**. Fully rigged and animated; CC0 1.0 Universal. Official source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0
+- These CC0 rigs are loaded from the public jsDelivr mirror of the official GitHub repositories in the deployed browser build. The bundled animated blacksmith remains an offline fallback for the player if the CDN is unavailable.
+
 The entries below were extracted directly from metadata embedded in the bundled GLB files.
 
 | Bundled file | Asset | Author | License | Source |

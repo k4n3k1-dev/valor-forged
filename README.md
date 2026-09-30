@@ -157,3 +157,8 @@ After building (`npm run build`) simply upload the contents of the `dist/` folde
 MIT — feel free to fork, extend and credit the original concept.
 
 **Valor Forged** — Core gameplay, all three Acts, story flow, skippable tutorial, in-game controls menu, audio systems, visual feedback, tests and deployment workflow are implemented. Final user playtesting is the remaining step.
+
+
+## Current character quality
+
+The current build uses fully rigged KayKit Knight/Rogue player characters with skeletal movement and attack animation, visible held weapons, animated guardian models, camera collision, improved foliage rendering, and directional damage feedback. The original static male/female files remain in the repository only as historical bundled assets; they are no longer the normal player visuals.

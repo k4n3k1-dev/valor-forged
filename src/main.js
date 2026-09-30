@@ -159,10 +159,15 @@ const WEAPONS = [
 const MONSTER_RESPAWN_MIN_MS = 2500;
 const MONSTER_RESPAWN_MAX_MS = 5000;
 
+const KAYKIT_BASE = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf';
+const KAYKIT_SKELETON_BASE = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf';
+
 const MODEL_PATHS = {
+  // The KayKit characters are fully rigged/animated and include proper faces and hand sockets.
+  // A bundled animated blacksmith is retained as an offline fallback so the game never returns to a T-pose.
   player: {
-    male: 'models/player/male.glb',
-    female: 'models/player/female.glb'
+    male: [`${KAYKIT_BASE}/Knight.glb`, 'models/npcs/weaponsmith.glb'],
+    female: [`${KAYKIT_BASE}/Rogue.glb`, 'models/npcs/weaponsmith.glb']
   },
   monsters: {
     slime: 'models/monsters/slime/slime_animated.glb',
@@ -171,13 +176,19 @@ const MODEL_PATHS = {
     archer: 'models/monsters/archer/archer_goblin.glb',
     golem: 'models/monsters/golem/rock_golem.glb'
   },
+  // Boss visuals use animated rigs instead of the old static boss meshes.
   bosses: {
-    1: 'models/bosses/act1_boss.glb',
-    2: 'models/bosses/act2_boss.glb',
-    3: 'models/bosses/act3_boss_golem.glb'
+    1: [`${KAYKIT_SKELETON_BASE}/Skeleton_Warrior.glb`, 'models/bosses/act1_boss.glb'],
+    2: [`${KAYKIT_SKELETON_BASE}/Skeleton_Mage.glb`, 'models/bosses/act2_boss.glb'],
+    3: ['models/monsters/golem/simple_golem.glb', 'models/bosses/act3_boss_golem.glb']
   },
   npcs: {
-    weaponsmith: 'models/npcs/weaponsmith.glb'
+    weaponsmith: 'models/npcs/weaponsmith.glb',
+    innkeeper: [`${KAYKIT_BASE}/Barbarian.glb`, 'models/npcs/weaponsmith.glb'],
+    alchemist: [`${KAYKIT_BASE}/Mage.glb`, 'models/player/female.glb']
+  },
+  weapons: {
+    pack: 'models/weapons/weapon_pack.glb'
   },
   buildings: {
     inn: 'models/buildings/low-poly_outsource_tavern.glb',
@@ -187,7 +198,12 @@ const MODEL_PATHS = {
     tree: ['models/environment/tree_01.glb', 'models/environment/tree_02.glb', 'models/environment/tree_03.glb'],
     pine: ['models/environment/pine_01.glb', 'models/environment/pine_02.glb'],
     bush: 'models/environment/bush.glb',
-    rock: ['models/environment/rock_medium.glb', 'models/environment/rock_small.glb']
+    bushFlowers: 'models/environment/bush_flowers.glb',
+    grass: ['models/environment/grass.glb', 'models/environment/grass_wispy.glb'],
+    fern: 'models/environment/fern.glb',
+    mushroom: 'models/environment/mushroom.glb',
+    deadTree: 'models/environment/dead_tree.glb',
+    rock: ['models/environment/rock_medium.glb', 'models/environment/rock_small.glb', 'models/environment/rock_wide.glb']
   }
 };
 
@@ -221,7 +237,12 @@ const state = {
 
 // ===================== THREE =====================
 let scene, camera, renderer, clock;
+let hemiLight, sunLight;
 let playerGroup, playerModel;
+let playerAnimation = null;
+let playerModelPath = null;
+let playerWeapon = null;
+let playerWeaponSocket = null;
 let monsters = [];
 let npcs = [];
 let portals = [];
@@ -627,35 +648,65 @@ function loadGame() {
 }
 
 // ===================== MODEL LOADING =====================
+function prepareModelForScene(root) {
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    mats.forEach(mat => {
+      const label = `${obj.name || ''} ${mat?.name || ''}`.toLowerCase();
+      if (/leaf|foliage|grass|fern|bush|flower/.test(label)) {
+        if (mat) {
+          mat.side = THREE.DoubleSide;
+          mat.alphaTest = Math.max(mat.alphaTest || 0, 0.15);
+          mat.roughness = mat.roughness ?? 0.9;
+          mat.needsUpdate = true;
+        }
+        // Large alpha-card foliage casting shadows was responsible for the giant black shapes in the old build.
+        obj.castShadow = false;
+      }
+    });
+  });
+  return root;
+}
+
 function loadModel(path) {
   if (modelCache[path]) {
     try { return Promise.resolve(cloneSkeleton(modelCache[path])); }
     catch { return Promise.resolve(modelCache[path].clone(true)); }
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     loader.load(
       path,
       gltf => {
+        prepareModelForScene(gltf.scene);
         modelCache[path] = gltf.scene;
         modelAnimations[path] = gltf.animations || [];
-        gltf.scene.traverse(c => {
-          if (c.isMesh) {
-            c.castShadow = true;
-            c.receiveShadow = true;
-          }
-        });
         try { resolve(cloneSkeleton(gltf.scene)); }
         catch { resolve(gltf.scene.clone(true)); }
       },
       undefined,
       err => {
         console.warn('Failed to load', path, err);
-        const geo = new THREE.BoxGeometry(1, 1.5, 1);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-        resolve(new THREE.Mesh(geo, mat));
+        reject(err);
       }
     );
   });
+}
+
+async function loadFirstAvailable(paths) {
+  const candidates = Array.isArray(paths) ? paths : [paths];
+  let lastError = null;
+  for (const path of candidates) {
+    try {
+      const model = await loadModel(path);
+      return { model, path };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('No model candidate could be loaded.');
 }
 
 function createAnimationController(model, path) {
@@ -675,10 +726,11 @@ function findAnimationAction(controller, stateName) {
   if (!controller) return null;
   const preferences = {
     idle: ['idle', 'squish', 'loop'],
-    walk: ['walk', 'walking', 'jump'],
-    attack: ['attack', 'keyaction'],
-    hit: ['gethit', 'damage'],
-    death: ['death', 'die']
+    walk: ['running_a', 'walking_a', 'running', 'walking', 'walk', 'run', 'jump'],
+    attack: ['1h_melee_attack', 'melee_attack', 'attack', 'keyaction'],
+    cast: ['spellcast', 'cast', 'shoot', 'ranged', 'attack'],
+    hit: ['hit_', 'gethit', 'damage', 'hit'],
+    death: ['death_a', 'death', 'die']
   }[stateName] || [stateName];
   const entries = Object.entries(controller.actions);
   for (const key of preferences) {
@@ -688,8 +740,8 @@ function findAnimationAction(controller, stateName) {
   return entries.length ? entries[0][1] : null;
 }
 
-function playAnimation(controller, stateName, once = false) {
-  if (!controller || controller.current === stateName) return;
+function playAnimation(controller, stateName, once = false, force = false) {
+  if (!controller || (!force && controller.current === stateName)) return;
   const next = findAnimationAction(controller, stateName);
   if (!next) return;
   Object.values(controller.actions).forEach(action => action.fadeOut(0.08));
@@ -714,6 +766,245 @@ function fitModel(model, targetHeight = 1.8) {
   box.setFromObject(model);
   model.position.y = -box.min.y;
   return model;
+}
+
+function findPlayerHandSocket(root) {
+  const directNames = ['handslot.r', 'HandSlot_R', 'hand_r', 'CC_Base_R_Hand_066', 'mixamorigRightHand', 'RightHand'];
+  for (const name of directNames) {
+    const found = root.getObjectByName(name);
+    if (found) return found;
+  }
+  let candidate = null;
+  root.traverse(obj => {
+    if (candidate) return;
+    const n = (obj.name || '').toLowerCase().replace(/[\[\].:/_-]/g, '');
+    if (n === 'handslotr' || n.includes('righthand') || n.endsWith('rhand')) candidate = obj;
+  });
+  return candidate;
+}
+
+function clearPlayerWeapon() {
+  if (playerWeapon?.parent) playerWeapon.parent.remove(playerWeapon);
+  playerWeapon = null;
+  playerWeaponSocket = null;
+}
+
+async function attachPlayerWeapon() {
+  clearPlayerWeapon();
+  if (!playerModel) return;
+  playerWeaponSocket = findPlayerHandSocket(playerModel);
+
+  // KayKit characters contain authored accessories. Keep one sword equipped and hide spare carried props.
+  ['1H_Axe', '2H_Axe', '2H_Sword', '2H_Staff', 'Knife', 'Knife_Offhand', '1H_Wand', '1H_Crossbow', '2H_Crossbow', 'Shield_Round'].forEach(name => {
+    const accessory = playerModel.getObjectByName(name);
+    if (accessory) accessory.visible = false;
+  });
+  const authoredSword = playerModel.getObjectByName('1H_Sword') || playerModel.getObjectByName('Sword_1H');
+  if (authoredSword) {
+    playerWeapon = authoredSword;
+    playerWeapon.visible = true;
+    playerWeapon.traverse(obj => {
+      obj.visible = true;
+      if (obj.isMesh && obj.material) {
+        obj.material = Array.isArray(obj.material) ? obj.material.map(m => m.clone()) : obj.material.clone();
+      }
+    });
+    if (playerWeaponSocket && authoredSword.parent !== playerWeaponSocket) {
+      playerWeaponSocket.add(authoredSword);
+      // Authored KayKit one-hand sword grip transform for the right-hand slot.
+      authoredSword.position.set(0, 0.555174, 0);
+      authoredSword.quaternion.set(0, 1, 0, 0);
+      authoredSword.scale.setScalar(0.8876);
+    }
+    updatePlayerWeaponVisual();
+    return;
+  }
+
+  try {
+    const pack = await loadModel(MODEL_PATHS.weapons.pack);
+    const source = pack.getObjectByName('Sword') || pack.getObjectByName('Sword_SwordMaterial_0');
+    if (!source) return;
+    playerWeapon = source.clone(true);
+    playerWeapon.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      obj.material = Array.isArray(obj.material) ? obj.material.map(m => m.clone()) : obj.material.clone();
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => {
+        if ('metalness' in mat) mat.metalness = 0.65;
+        if ('roughness' in mat) mat.roughness = 0.32;
+      });
+    });
+
+    const parent = playerWeaponSocket || playerModel;
+    parent.add(playerWeapon);
+    if (playerWeaponSocket) {
+      // The pack's sword is authored around its grip; these values align it with common right-hand sockets.
+      playerWeapon.position.set(0, 0.12, 0.02);
+      playerWeapon.rotation.set(0, 0, Math.PI);
+      playerWeapon.scale.setScalar(0.62);
+    } else {
+      // Fallback for a model with no hand socket: place the sword beside the right hand area, not floating on the ground.
+      playerWeapon.position.set(0.42, 1.05, -0.02);
+      playerWeapon.rotation.set(0, 0, Math.PI / 2);
+      playerWeapon.scale.setScalar(0.42);
+    }
+    updatePlayerWeaponVisual();
+  } catch (err) {
+    console.warn('Could not attach weapon model:', err);
+  }
+}
+
+function updatePlayerWeaponVisual() {
+  if (!playerWeapon) return;
+  const tier = THREE.MathUtils.clamp(state.player.weaponIdx / Math.max(1, WEAPONS.length - 1), 0, 1);
+  playerWeapon.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    mats.forEach(mat => {
+      if (mat.color) mat.color.lerpColors(new THREE.Color(0xd5d7dc), new THREE.Color(0xd9b84f), tier * 0.6);
+      if (mat.emissive) {
+        mat.emissive.set(0x352600);
+        mat.emissiveIntensity = tier > 0.65 ? 0.16 + tier * 0.18 : 0;
+      }
+    });
+  });
+}
+
+function addDamageDirectionCue(sourcePosition) {
+  const vignette = $('damage-vignette');
+  const arrow = $('damage-direction');
+  if (!vignette || !arrow || !camera || !playerGroup || !sourcePosition) return;
+  vignette.classList.remove('pulse');
+  arrow.classList.remove('show');
+  void vignette.offsetWidth;
+  vignette.classList.add('pulse');
+
+  const toSource = sourcePosition.clone().sub(playerGroup.position).setY(0).normalize();
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() < 0.001) forward.set(0, 0, -1);
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const angle = Math.atan2(toSource.dot(right), toSource.dot(forward));
+  arrow.style.transform = `translate(-50%, -50%) rotate(${angle}rad)`;
+  arrow.classList.add('show');
+  clearTimeout(arrow._hideTimer);
+  arrow._hideTimer = setTimeout(() => arrow.classList.remove('show'), 520);
+}
+
+function segmentBlockedBySolids(start, end, colliders = activeSolidColliders()) {
+  const samples = 18;
+  for (let i = 2; i < samples - 1; i++) {
+    const p = start.clone().lerp(end, i / samples);
+    if (collidesAt(p, 0.08, colliders)) return true;
+  }
+  return false;
+}
+
+function cameraPointBlocked(point) {
+  for (const c of activeSolidColliders()) {
+    if (point.y > (c.height || 6) + 0.65) continue;
+    const dx = point.x - c.x;
+    const dz = point.z - c.z;
+    if (c.shape === 'box') {
+      if (Math.abs(dx) < c.halfW + 0.45 && Math.abs(dz) < c.halfD + 0.45) return true;
+    } else if (dx * dx + dz * dz < Math.pow((c.radius || 0) + 0.45, 2)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function resolveCameraPosition(target, desired) {
+  let lastSafe = target.clone().lerp(desired, 0.28);
+  for (let i = 5; i <= 24; i++) {
+    const candidate = target.clone().lerp(desired, i / 24);
+    if (cameraPointBlocked(candidate)) {
+      lastSafe.y += 0.45;
+      return lastSafe;
+    }
+    lastSafe = candidate;
+  }
+  return desired;
+}
+
+function createGroundAccent(x, z, width, depth, color, rotation = 0, y = 0.025) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.rotation.z = rotation;
+  mesh.position.set(x, y, z);
+  mesh.receiveShadow = true;
+  envGroup.add(mesh);
+  return mesh;
+}
+
+function buildLandscapeFeatures(actNum) {
+  if (actNum === 3) return;
+  const hillColor = actNum === 1 ? 0x315f35 : 0x142619;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.11;
+    const r = 82 + (i % 3) * 5;
+    const radius = 10 + (i % 4) * 2.2;
+    const height = 12 + (i % 5) * 2.1;
+    const hill = new THREE.Mesh(
+      new THREE.ConeGeometry(radius, height, 8),
+      new THREE.MeshStandardMaterial({ color: hillColor, roughness: 1, flatShading: true })
+    );
+    hill.position.set(Math.cos(a) * r, height / 2 - 1, Math.sin(a) * r);
+    hill.rotation.y = a * 0.7;
+    hill.castShadow = false;
+    hill.receiveShadow = true;
+    envGroup.add(hill);
+  }
+
+  const waterX = actNum === 1 ? -34 : 35;
+  const waterZ = actNum === 1 ? -24 : -18;
+  const waterColor = actNum === 1 ? 0x3f86a8 : 0x183b35;
+  const pond = new THREE.Mesh(
+    new THREE.CircleGeometry(actNum === 1 ? 6.5 : 5.5, 40),
+    new THREE.MeshStandardMaterial({
+      color: waterColor,
+      roughness: 0.2,
+      metalness: 0.05,
+      transparent: true,
+      opacity: actNum === 1 ? 0.82 : 0.72
+    })
+  );
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.set(waterX, 0.04, waterZ);
+  envGroup.add(pond);
+  addWorldCollider(waterX, waterZ, actNum === 1 ? 6.2 : 5.2, 0.3, 'solid');
+
+  const rim = new THREE.Mesh(
+    new THREE.RingGeometry(actNum === 1 ? 6.2 : 5.2, actNum === 1 ? 7.1 : 6.1, 40),
+    new THREE.MeshStandardMaterial({ color: actNum === 1 ? 0x71805b : 0x273526, roughness: 1, side: THREE.DoubleSide })
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.set(waterX, 0.025, waterZ);
+  envGroup.add(rim);
+}
+
+function buildActGroundDetails(actNum) {
+  if (actNum === 1) {
+    createGroundAccent(0, 2, 25, 20, 0x5e5638, 0, 0.03);
+    createGroundAccent(0, -25, 6.5, 55, 0x75613c, 0, 0.035);
+    createGroundAccent(0, -53, 11, 10, 0x68604b, 0, 0.04);
+    for (let z = -4; z >= -48; z -= 8) {
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.12, 0.65), new THREE.MeshStandardMaterial({ color: 0x8a836f, roughness: 1 }));
+      stone.position.set((z / 8) % 2 === 0 ? -2.6 : 2.6, 0.07, z);
+      stone.rotation.y = (z % 3) * 0.23;
+      stone.receiveShadow = true;
+      envGroup.add(stone);
+    }
+  } else if (actNum === 2) {
+    createGroundAccent(0, 2, 24, 19, 0x2f3426, 0, 0.03);
+    const trail = [[0,-8,0],[-2,-19,0.08],[1.5,-31,-0.08],[-1,-43,0.05],[0,-53,0]];
+    trail.forEach(([x,z,r]) => createGroundAccent(x, z, 5.5, 15, 0x414332, r, 0.035));
+  }
 }
 
 
@@ -931,6 +1222,7 @@ function damagePlayer(amount, sourcePosition = null, knockbackStrength = 0) {
   spawnBurst(playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0)), 0xff5544, 9, 2.5, 0.34, 0.09);
   addCameraShake(0.08, 0.12);
   showDamage(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)), dmg);
+  if (sourcePosition) addDamageDirectionCue(sourcePosition);
   if (sourcePosition && knockbackStrength > 0) {
     const push = playerGroup.position.clone().sub(sourcePosition).setY(0);
     if (push.lengthSq() > 0.001) {
@@ -945,20 +1237,21 @@ function damagePlayer(amount, sourcePosition = null, knockbackStrength = 0) {
 function updatePlayerVisual(dt, moving) {
   if (!playerModel) return;
   playerVisualTime += dt;
+
+  if (playerAnimation) {
+    if (playerAttackAnimTimer > 0) {
+      playerAttackAnimTimer = Math.max(0, playerAttackAnimTimer - dt);
+    } else {
+      playAnimation(playerAnimation, moving ? 'walk' : 'idle');
+    }
+    return;
+  }
+
+  // Offline procedural fallback only. The normal player path uses skeletal clips above.
   const baseY = playerModel.userData.baseY ?? playerModel.position.y;
   playerModel.userData.baseY = baseY;
-  const bob = moving ? Math.sin(playerVisualTime * 10) * 0.045 : Math.sin(playerVisualTime * 2.2) * 0.012;
+  const bob = moving ? Math.sin(playerVisualTime * 10) * 0.035 : Math.sin(playerVisualTime * 2.2) * 0.008;
   playerModel.position.y = baseY + bob;
-
-  if (playerAttackAnimTimer > 0) {
-    playerAttackAnimTimer = Math.max(0, playerAttackAnimTimer - dt);
-    const progress = 1 - playerAttackAnimTimer / 0.28;
-    playerModel.rotation.z = -Math.sin(progress * Math.PI) * 0.32;
-    playerModel.rotation.x = Math.sin(progress * Math.PI) * 0.09;
-  } else {
-    playerModel.rotation.z = THREE.MathUtils.lerp(playerModel.rotation.z, moving ? Math.sin(playerVisualTime * 10) * 0.035 : 0, 0.2);
-    playerModel.rotation.x = THREE.MathUtils.lerp(playerModel.rotation.x, 0, 0.2);
-  }
 }
 
 function updateProceduralMonsterVisual(mon, dt, moving) {
@@ -989,24 +1282,27 @@ async function setupThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
   // Lights
-  const hemi = new THREE.HemisphereLight(0xb1e1ff, 0x444422, 0.7);
-  scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff5e0, 1.1);
-  sun.position.set(30, 50, 20);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 120;
-  sun.shadow.camera.left = -60;
-  sun.shadow.camera.right = 60;
-  sun.shadow.camera.top = 60;
-  sun.shadow.camera.bottom = -60;
-  scene.add(sun);
+  hemiLight = new THREE.HemisphereLight(0xb1e1ff, 0x444422, 0.7);
+  scene.add(hemiLight);
+  sunLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
+  sunLight.position.set(30, 50, 20);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.shadow.camera.near = 1;
+  sunLight.shadow.camera.far = 120;
+  sunLight.shadow.camera.left = -60;
+  sunLight.shadow.camera.right = 60;
+  sunLight.shadow.camera.top = 60;
+  sunLight.shadow.camera.bottom = -60;
+  scene.add(sunLight);
 
   envGroup = new THREE.Group();
   scene.add(envGroup);
@@ -1019,7 +1315,7 @@ async function buildAct(actNum) {
   clearBossArena();
   clearProjectiles();
   envGroup.visible = true;
-  mixers = [];
+  mixers = playerAnimation ? [playerAnimation] : [];
   worldColliders = [];
   coverColliders = [];
   bossCoverColliders = [];
@@ -1040,6 +1336,22 @@ async function buildAct(actNum) {
   scene.background = new THREE.Color(cfg.fog);
   scene.fog = new THREE.Fog(cfg.fog, cfg.fogNear, cfg.fogFar);
 
+  const lighting = {
+    1: { hemi: 0xbfe8ff, ground: 0x4c5d2e, hemiI: 0.82, sun: 0xfff0c4, sunI: 1.18, exposure: 1.08 },
+    2: { hemi: 0x617b84, ground: 0x10180f, hemiI: 0.42, sun: 0xaab3c5, sunI: 0.58, exposure: 0.92 },
+    3: { hemi: 0x8d93a5, ground: 0x211f25, hemiI: 0.52, sun: 0xd9d2c5, sunI: 0.76, exposure: 0.98 }
+  }[actNum];
+  if (hemiLight && lighting) {
+    hemiLight.color.setHex(lighting.hemi);
+    hemiLight.groundColor.setHex(lighting.ground);
+    hemiLight.intensity = lighting.hemiI;
+  }
+  if (sunLight && lighting) {
+    sunLight.color.setHex(lighting.sun);
+    sunLight.intensity = lighting.sunI;
+  }
+  if (renderer && lighting) renderer.toneMappingExposure = lighting.exposure;
+
   if (actNum === 3) {
     createAct3Architecture();
   } else {
@@ -1051,6 +1363,10 @@ async function buildAct(actNum) {
     envGroup.add(ground);
   }
 
+  if (actNum !== 3) {
+    buildActGroundDetails(actNum);
+    buildLandscapeFeatures(actNum);
+  }
   await scatterEnvironment(actNum);
   await buildTown();
   await spawnMonsters(actNum);
@@ -1077,17 +1393,18 @@ async function scatterEnvironment(actNum) {
     return;
   }
 
+  // Keep tall scenery away from the camera/town corridor so the view stays readable.
   const trees = MODEL_PATHS.env.tree;
   const pines = MODEL_PATHS.env.pine;
-  const count = actNum === 1 ? 25 : 44;
+  const count = actNum === 1 ? 18 : 30;
 
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const r = 18 + Math.random() * 70;
+    const r = 32 + Math.random() * 54;
     const x = Math.cos(angle) * r;
     const z = Math.sin(angle) * r;
-    if (Math.abs(x) < 12 && Math.abs(z) < 12) continue;
-    if (Math.abs(x) < 8 && z < -43 && z > -67) continue;
+    if (Math.abs(x) < 15 && Math.abs(z) < 18) continue;
+    if (Math.abs(x) < 9 && z < 10 && z > -70) continue;
 
     const path = actNum === 2
       ? pines[Math.floor(Math.random() * pines.length)]
@@ -1095,26 +1412,96 @@ async function scatterEnvironment(actNum) {
 
     try {
       const m = await loadModel(path);
-      fitModel(m, 4 + Math.random() * 4);
+      fitModel(m, actNum === 2 ? 5.3 + Math.random() * 1.8 : 4.4 + Math.random() * 1.5);
       m.position.set(x, 0, z);
       m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
-      addWorldCollider(x, z, actNum === 2 ? 1.35 : 1.1, 8, actNum === 2 ? 'cover' : 'solid');
+      addWorldCollider(x, z, actNum === 2 ? 1.15 : 0.95, actNum === 2 ? 7.5 : 6.5, actNum === 2 ? 'cover' : 'solid');
     } catch {}
   }
 
-  for (let i = 0; i < 14; i++) {
-    const x = (Math.random() - 0.5) * 120;
-    const z = (Math.random() - 0.5) * 120;
-    if (Math.abs(x) < 10 && Math.abs(z) < 10) continue;
+  // Dense small-scale foliage makes the world feel authored without blocking combat or the camera.
+  const clutter = actNum === 1
+    ? [MODEL_PATHS.env.grass[0], MODEL_PATHS.env.grass[1], MODEL_PATHS.env.bush, MODEL_PATHS.env.bushFlowers]
+    : [MODEL_PATHS.env.fern, MODEL_PATHS.env.mushroom, MODEL_PATHS.env.bush, MODEL_PATHS.env.grass[1]];
+  const clutterCount = actNum === 1 ? 46 : 58;
+  for (let i = 0; i < clutterCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 14 + Math.random() * 68;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+    if (Math.abs(x) < 4.5 && z < 7 && z > -66) continue;
     try {
-      const m = await loadModel(MODEL_PATHS.env.rock[Math.floor(Math.random() * 2)]);
-      fitModel(m, 0.8 + Math.random() * 1.5);
-      m.position.set(x, 0, z);
+      const path = clutter[Math.floor(Math.random() * clutter.length)];
+      const m = await loadModel(path);
+      const tall = path.includes('bush');
+      fitModel(m, tall ? 0.8 + Math.random() * 0.7 : 0.35 + Math.random() * 0.45);
+      m.position.set(x, 0.01, z);
+      m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
-      addWorldCollider(x, z, 0.75, 2, 'solid');
     } catch {}
   }
+
+  for (let i = 0; i < 18; i++) {
+    const x = (Math.random() - 0.5) * 125;
+    const z = (Math.random() - 0.5) * 125;
+    if (Math.abs(x) < 11 && Math.abs(z) < 13) continue;
+    if (Math.abs(x) < 5 && z < 7 && z > -66) continue;
+    try {
+      const m = await loadModel(MODEL_PATHS.env.rock[Math.floor(Math.random() * MODEL_PATHS.env.rock.length)]);
+      fitModel(m, 0.7 + Math.random() * 1.25);
+      m.position.set(x, 0, z);
+      m.rotation.y = Math.random() * Math.PI * 2;
+      envGroup.add(m);
+      addWorldCollider(x, z, 0.65, 1.7, 'solid');
+    } catch {}
+  }
+}
+
+function addTownSetDressing() {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4c2f, roughness: 0.95 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x282b30, roughness: 0.6, metalness: 0.45 });
+
+  // Low fence sections frame the safe town without boxing the player in.
+  const fenceSegments = [
+    [-13, 4, 4.5, 0], [-7, 7, 5, 0], [7, 7, 5, 0], [13, 4, 4.5, 0],
+    [-14, -13, 5, 0], [14, -13, 5, 0]
+  ];
+  fenceSegments.forEach(([x, z, length, rot]) => {
+    const group = new THREE.Group();
+    const railA = new THREE.Mesh(new THREE.BoxGeometry(length, 0.13, 0.14), wood);
+    const railB = railA.clone();
+    railA.position.y = 0.72;
+    railB.position.y = 1.18;
+    group.add(railA, railB);
+    for (const px of [-length / 2, 0, length / 2]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.17, 1.55, 0.17), wood);
+      post.position.set(px, 0.76, 0);
+      post.castShadow = true;
+      group.add(post);
+    }
+    group.position.set(x, 0, z);
+    group.rotation.y = rot;
+    envGroup.add(group);
+    addBoxCollider(x, z, length, 0.32, 1.55, 'solid');
+  });
+
+  // Warm lanterns make town readable at a glance in all three Acts.
+  [[-3.5, -1], [3.5, -1], [-3.5, -10.5], [3.5, -10.5]].forEach(([x, z]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.6, 8), iron);
+    pole.position.set(x, 1.3, z);
+    pole.castShadow = true;
+    envGroup.add(pole);
+    const lamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.19, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffa52e, emissiveIntensity: 1.3 })
+    );
+    lamp.position.set(x, 2.45, z);
+    envGroup.add(lamp);
+    const light = new THREE.PointLight(0xffb04a, state.currentAct === 2 ? 1.25 : 0.75, 9, 2);
+    light.position.set(x, 2.4, z);
+    envGroup.add(light);
+  });
 }
 
 async function buildTown() {
@@ -1122,6 +1509,7 @@ async function buildTown() {
     const inn = await loadModel(MODEL_PATHS.buildings.inn);
     fitModel(inn, 6);
     inn.position.set(-8, 0, -6);
+    inn.rotation.y = Math.PI * 0.02;
     envGroup.add(inn);
     addBoxCollider(-8, -6, 6.2, 5.2, 6, 'solid');
   } catch {}
@@ -1130,6 +1518,7 @@ async function buildTown() {
     const shop = await loadModel(MODEL_PATHS.buildings.shop);
     fitModel(shop, 4);
     shop.position.set(8, 0, -5);
+    shop.rotation.y = -Math.PI * 0.04;
     envGroup.add(shop);
     addBoxCollider(8, -5, 5.2, 4.2, 4, 'solid');
   } catch {}
@@ -1152,34 +1541,51 @@ async function buildTown() {
   }
 
   try {
-    const innk = await loadModel(MODEL_PATHS.player.male);
-    fitModel(innk, 1.7);
+    const loaded = await loadFirstAvailable(MODEL_PATHS.npcs.innkeeper);
+    const innk = loaded.model;
+    fitModel(innk, 1.78);
     innk.position.set(-8, 0, -1.2);
     scene.add(innk);
-    npcs.push({ mesh: innk, role: 'Innkeeper', type: 'inn' });
+    const animation = createAnimationController(innk, loaded.path);
+    playAnimation(animation, 'idle');
+    npcs.push({ mesh: innk, role: 'Innkeeper', type: 'inn', animation });
   } catch {}
 
   try {
-    const alc = await loadModel(MODEL_PATHS.player.female);
-    fitModel(alc, 1.65);
+    const loaded = await loadFirstAvailable(MODEL_PATHS.npcs.alchemist);
+    const alc = loaded.model;
+    fitModel(alc, 1.72);
     alc.position.set(0, 0, -8);
     scene.add(alc);
-    npcs.push({ mesh: alc, role: 'Alchemist', type: 'potion' });
+    const animation = createAnimationController(alc, loaded.path);
+    playAnimation(animation, 'idle');
+    npcs.push({ mesh: alc, role: 'Alchemist', type: 'potion', animation });
   } catch {}
+
+  addTownSetDressing();
 }
 
 async function spawnPlayer() {
   if (playerGroup) scene.remove(playerGroup);
+  clearPlayerWeapon();
+  playerAnimation = null;
+  playerModelPath = null;
   playerGroup = new THREE.Group();
   scene.add(playerGroup);
 
-  const path = MODEL_PATHS.player[state.player.gender] || MODEL_PATHS.player.male;
+  const candidates = MODEL_PATHS.player[state.player.gender] || MODEL_PATHS.player.male;
   try {
-    playerModel = await loadModel(path);
-    fitModel(playerModel, 1.8);
+    const loaded = await loadFirstAvailable(candidates);
+    playerModel = loaded.model;
+    playerModelPath = loaded.path;
+    fitModel(playerModel, 1.82);
     playerModel.userData.baseY = playerModel.position.y;
     playerGroup.add(playerModel);
-  } catch {
+    playerAnimation = createAnimationController(playerModel, playerModelPath);
+    playAnimation(playerAnimation, 'idle');
+    await attachPlayerWeapon();
+  } catch (err) {
+    console.warn('Player model fallback failed:', err);
     const geo = new THREE.CapsuleGeometry(0.4, 1.2, 4, 8);
     const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff });
     playerModel = new THREE.Mesh(geo, mat);
@@ -1207,13 +1613,16 @@ async function spawnMonsters(actNum) {
 }
 
 async function createMonster(type, x, z, isBoss = false) {
-  const path = isBoss
+  const pathSpec = isBoss
     ? MODEL_PATHS.bosses[state.currentAct]
     : MODEL_PATHS.monsters[type] || MODEL_PATHS.monsters.slime;
 
   let mesh;
+  let path = Array.isArray(pathSpec) ? pathSpec[0] : pathSpec;
   try {
-    mesh = await loadModel(path);
+    const loaded = await loadFirstAvailable(pathSpec);
+    mesh = loaded.model;
+    path = loaded.path;
     const h = isBoss ? (state.currentAct === 3 ? 5 : 3.5) : (type === 'golem' ? 2.8 : type === 'wolf' ? 1.2 : 1.5);
     fitModel(mesh, h);
     mesh.traverse(obj => {
@@ -1332,7 +1741,8 @@ function onClickAttack(e) {
   if (dist > 4.5) return;
 
   attackCooldown = 0.45;
-  playerAttackAnimTimer = 0.28;
+  playerAttackAnimTimer = 0.42;
+  playAnimation(playerAnimation, 'attack', true, true);
   gameAudio.play('swing');
   const dmg = state.player.attack + Math.floor(Math.random() * 8);
   mon.hp -= dmg;
@@ -1527,6 +1937,7 @@ function openNPC(npc) {
         gameAudio.play('coin');
         state.player.weaponIdx = i;
         state.player.attack = w.atk + Math.floor((state.player.level - 1) * 1.5);
+        updatePlayerWeaponVisual();
         updateHUD();
         saveGame();
         openNPC(npc);
@@ -2040,8 +2451,8 @@ function updateAct2Boss(mon, dt, dist, dir) {
   if (dist < 20 && mon.cooldown <= 0) {
     mon.cooldown = 1.35;
     spawnProjectile(mon, { homing: true, turnRate: 3.2, speed: 10.8, radius: 0.45, color: 0xff642e, emissive: 0xbb2600 });
-    playAnimation(mon.animation, 'attack', true);
-    mon.animLock = 0.45;
+    playAnimation(mon.animation, 'cast', true, true);
+    mon.animLock = 0.55;
   }
 }
 
@@ -2178,9 +2589,12 @@ function animate() {
   }
   updatePlayerVisual(dt, moving && !state.falling);
 
-  const offset = new THREE.Vector3(0, 7, 11);
+  const offset = new THREE.Vector3(0, 6.7, 10.5);
   offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
-  camera.position.lerp(playerGroup.position.clone().add(offset), 0.1);
+  const cameraTarget = playerGroup.position.clone().add(new THREE.Vector3(0, 1.45, 0));
+  const desiredCamera = playerGroup.position.clone().add(offset);
+  const safeCamera = resolveCameraPosition(cameraTarget, desiredCamera);
+  camera.position.lerp(safeCamera, 0.14);
   if (cameraShakeTime > 0) {
     cameraShakeTime = Math.max(0, cameraShakeTime - dt);
     const fade = cameraShakeTime > 0 ? 1 : 0;
@@ -2237,7 +2651,7 @@ function animate() {
         mon.cooldown = 1.65;
         spawnProjectile(mon);
         if (mon.animation) {
-          playAnimation(mon.animation, 'attack', true);
+          playAnimation(mon.animation, 'attack', true, true);
           mon.animLock = 0.5;
         }
       } else if (mon.animLock <= 0) {
@@ -2248,21 +2662,29 @@ function animate() {
     }
 
     let didMove = false;
+    const monsterRadius = mon.type === 'golem' ? 0.95 : 0.65;
     if (dist > 2.5) {
       didMove = moveWithCollisions(
         mon.mesh,
         dir.clone().multiplyScalar(mon.speed * dt),
-        mon.type === 'golem' ? 0.95 : 0.65,
+        monsterRadius,
         state.currentAct === 3
       );
+      if (!didMove) {
+        const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(mon.speed * 0.7 * dt);
+        didMove = moveWithCollisions(mon.mesh, side, monsterRadius, state.currentAct === 3);
+      }
     }
 
-    if (dist < 2.8 && mon.cooldown <= 0) {
+    const attackStart = mon.mesh.position.clone().add(new THREE.Vector3(0, 1, 0));
+    const attackEnd = playerGroup.position.clone().add(new THREE.Vector3(0, 1, 0));
+    const blockedAttack = segmentBlockedBySolids(attackStart, attackEnd);
+    if (dist < 2.8 && mon.cooldown <= 0 && !blockedAttack) {
       mon.cooldown = 1.0;
       const dmg = mon.atk + Math.floor(Math.random() * 6);
       damagePlayer(dmg, mon.mesh.position, 0.55);
       if (mon.animation) {
-        playAnimation(mon.animation, 'attack', true);
+        playAnimation(mon.animation, 'attack', true, true);
         mon.animLock = 0.5;
       }
     } else if (mon.animLock <= 0) {

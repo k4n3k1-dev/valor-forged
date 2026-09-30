@@ -62,3 +62,16 @@ This build finishes the remaining non-audio gameplay work from the current conce
 - Added a three-part ending/epilogue before free roam.
 - Added an always-available in-game menu on Esc / HUD Menu with current objective, Controls, Credits, Resume and Save & Return to Main Menu.
 - Added a persistent HUD objective line.
+
+
+## Character / World Quality Pass
+
+- Replaced the old static/T-pose player path with fully rigged KayKit Knight/Rogue characters and proper skeletal Idle/Run/Attack animation playback.
+- Added visible sword attachment to the character's right-hand socket, with weapon-tier material feedback.
+- Upgraded Act I/II guardian visuals to fully animated KayKit Skeleton Warrior/Mage rigs; Act III uses the animated simple golem.
+- Fixed alpha-card foliage materials and disabled oversized foliage shadow cards that caused the huge black shapes seen in the previous build.
+- Added camera collision so the third-person camera no longer moves through trees/buildings.
+- Added authored roads/plazas, denser low foliage, rocks and forest dressing while keeping combat corridors readable.
+- Reduced oversized random trees near town and the main boss path.
+- Added directional damage vignette/arrow and blocked melee damage through solid scenery so off-screen attacks are understandable.
+- Improved renderer color management with sRGB output and ACES filmic tone mapping.
