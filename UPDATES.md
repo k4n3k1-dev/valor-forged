@@ -75,3 +75,19 @@ This build finishes the remaining non-audio gameplay work from the current conce
 - Reduced oversized random trees near town and the main boss path.
 - Added directional damage vignette/arrow and blocked melee damage through solid scenery so off-screen attacks are understandable.
 - Improved renderer color management with sRGB output and ACES filmic tone mapping.
+
+## Town / Forest World Overhaul
+
+- Rebuilt Acts I and II around a **fenced safe-town hub** instead of an exposed shop cluster.
+- Added a controlled town gate and safe-zone rules: normal monsters cannot enter or attack through the town, and hostile projectiles are removed at the boundary.
+- Added a visible **SAFE ZONE** HUD indicator while the player is inside the protected town.
+- Added **ambient civilian NPCs** who walk authored routes through the plaza/streets but are intentionally non-interactive.
+- Expanded the town into a real settlement with a plaza, fountain, market areas, benches, lamps, homes/civic structures and more coherent street placement.
+- Added CC0 **KayKit Medieval Hexagon** town architecture as preferred online assets with the previous bundled buildings retained as offline fallbacks.
+- Re-authored Verdant Valley / Shadowgrove vegetation as forest belts and clearings rather than uniformly scattered trees.
+- Added dense forest-floor dressing, ponds, rocks, outer tree lines, hills and distant mountain/vista anchors.
+- Added optional CC0 **Gobkit** higher-detail nature anchors with local fallbacks.
+- Kept the main town-to-boss route readable while placing hostile spawn zones outside the safe settlement and away from the road.
+- Fixed movement to be **camera-relative**: W/Up now moves away from the camera / toward the top of the screen, and S/Down moves toward the camera.
+- Reduced normal enemy health-bar clutter by showing bars primarily once enemies are near combat range.
+- The supplied anime-RPG / forest / town screenshots were used as visual-direction references only; no copyrighted scene assets were copied.

@@ -69,3 +69,16 @@ During the next browser playthrough, specifically verify:
 - Melee enemies cannot damage the player through a solid tree/building/ruin.
 - When damage comes from off-screen, the red directional indicator points toward the attacker.
 - Verdant Valley and Shadowgrove show their roads, town dressing, foliage clusters, rocks, water feature and distant terrain rather than only a flat ground plane.
+
+## Safe town / forest overhaul checks
+
+- Confirm `W` / Up moves the character forward into the scene and `S` / Down moves back toward the camera.
+- Walk the entire fenced town and confirm the gate is the intended exit toward the forest.
+- Pull a monster toward the settlement and confirm it **will not enter the safe zone or damage you inside it**.
+- Confirm the green `SAFE ZONE` badge appears while inside town and disappears after leaving.
+- Walk around the hub and confirm several civilian NPCs patrol the streets/plaza without showing a Talk prompt.
+- Confirm the Innkeeper, Weaponsmith and Alchemist remain the only town NPCs that open gameplay menus.
+- Check that the hub reads as a settlement: multiple buildings, market/plaza, benches, lamps, fencing/gate and civilians rather than isolated props.
+- Leave town and confirm Verdant Valley / Shadowgrove transition into denser forest belts and combat clearings.
+- Confirm normal enemies spawn outside the protected town / main road instead of beside shop NPCs.
+- If the optional KayKit/Gobkit CDN assets fail to load, verify the bundled fallback buildings/trees still produce a playable world rather than invisible objects.

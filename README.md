@@ -18,6 +18,9 @@ Built with **Three.js**. Three distinct Acts · deep progression · free-roam en
 | Melee chase AI + projectile-based ranged enemies | ✅ |
 | Enemy respawning for continued progression | ✅ |
 | 3 Acts with distinct environments and gameplay | ✅ |
+| Fenced safe towns with monster exclusion + safe-zone HUD | ✅ |
+| Roaming non-interactive civilian NPCs in town | ✅ |
+| Authored forest belts / clearings / vista dressing | ✅ |
 | Sealed boss arenas with level requirements (40 / 120 / 200) | ✅ |
 | Act 1 telegraphed straight-line charge boss | ✅ |
 | Act 2 homing-fireball boss + tree cover / line-of-sight | ✅ |
@@ -77,7 +80,7 @@ The game detects it automatically; otherwise it falls back to the built-in origi
 
 | Key / Action | Effect |
 |--------------|--------|
-| **W A S D** or Arrow Keys | Move |
+| **W A S D** or Arrow Keys | Camera-relative movement (W/Up forward, S/Down back) |
 | **Left Click** on monster | Attack (melee range) |
 | **H** | Use Health Potion (50% HP, max 10) |
 | **T** | Talk to NPC (Innkeeper / Weaponsmith / Alchemist) |
@@ -87,6 +90,13 @@ The game detects it automatically; otherwise it falls back to the built-in origi
 | **Esc** | Open / close the in-game menu |
 
 ---
+
+
+### World structure
+
+Acts I and II now begin in **Valor Haven**, a fenced safe-town hub. Normal monsters cannot cross into the protected settlement, and ambient civilian NPCs walk the plaza and streets while the Innkeeper, Weaponsmith and Alchemist remain the dedicated interactive NPCs. Beyond the gate, the main road leads into denser forest belts, clearings, ponds, rocks, hills and distant terrain before reaching the boss route. Act III remains the separate Highland Citadel traversal/combat space.
+
+The world uses the existing bundled assets plus CC0 KayKit medieval architecture and optional CC0 Gobkit nature anchors. Runtime remote assets always have bundled fallbacks.
 
 ## 🏰 The Three Acts
 

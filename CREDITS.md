@@ -1,5 +1,12 @@
 # Valor Forged — Asset Credits
 
+
+## World / settlement assets added for the world overhaul
+
+- **KayKit Medieval Hexagon Pack** — medieval houses, tavern, blacksmith, market, church and tower pieces used to give the safe-town hub a cohesive settlement silhouette. Creator: **Kay Lousberg / KayKit**. License: **CC0 1.0 Universal**. Official source: https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+- **Gobkit Free Nature Kit** — selected higher-detail tree and distant mountain/cliff models used as optional forest/vista anchors. License: **CC0 1.0 Universal**. Source: https://gobkit.com/ — runtime placements always have existing bundled local model fallbacks.
+- The Sword Art Online-style screenshots supplied during development were used only as **composition / mood references** for readable anime-RPG characters, a lush forest, and a populated medieval town. No copyrighted models, textures, UI, or scene geometry from those screenshots are included.
+
 ## Advanced animated character rigs used by the current build
 
 - **KayKit Character Pack: Adventurers** — Knight (male player) and Rogue (female player), by **Kay Lousberg / KayKit**. Fully rigged and animated; CC0 1.0 Universal. Official source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0

@@ -161,6 +161,8 @@ const MONSTER_RESPAWN_MAX_MS = 5000;
 
 const KAYKIT_BASE = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf';
 const KAYKIT_SKELETON_BASE = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf';
+const KAYKIT_MEDIEVAL_BLUE = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0@main/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue';
+const KAYKIT_MEDIEVAL_RED = 'https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0@main/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/red';
 
 const MODEL_PATHS = {
   // The KayKit characters are fully rigged/animated and include proper faces and hand sockets.
@@ -185,14 +187,27 @@ const MODEL_PATHS = {
   npcs: {
     weaponsmith: 'models/npcs/weaponsmith.glb',
     innkeeper: [`${KAYKIT_BASE}/Barbarian.glb`, 'models/npcs/weaponsmith.glb'],
-    alchemist: [`${KAYKIT_BASE}/Mage.glb`, 'models/player/female.glb']
+    alchemist: [`${KAYKIT_BASE}/Mage.glb`, 'models/player/female.glb'],
+    civilians: [
+      `${KAYKIT_BASE}/Knight.glb`,
+      `${KAYKIT_BASE}/Rogue.glb`,
+      `${KAYKIT_BASE}/Barbarian.glb`,
+      `${KAYKIT_BASE}/Mage.glb`
+    ]
   },
   weapons: {
     pack: 'models/weapons/weapon_pack.glb'
   },
   buildings: {
-    inn: 'models/buildings/low-poly_outsource_tavern.glb',
-    shop: 'models/buildings/weapon_shop.glb'
+    // Cohesive CC0 medieval town pieces are preferred online; existing bundled buildings remain fallbacks.
+    inn: [`${KAYKIT_MEDIEVAL_RED}/building_tavern_red.gltf`, 'models/buildings/low-poly_outsource_tavern.glb'],
+    shop: [`${KAYKIT_MEDIEVAL_RED}/building_blacksmith_red.gltf`, 'models/buildings/weapon_shop.glb'],
+    market: [`${KAYKIT_MEDIEVAL_RED}/building_market_red.gltf`, 'models/buildings/weapon_shop.glb'],
+    homeA: [`${KAYKIT_MEDIEVAL_RED}/building_home_A_red.gltf`, 'models/buildings/low-poly_outsource_tavern.glb'],
+    homeB: [`${KAYKIT_MEDIEVAL_BLUE}/building_home_B_blue.gltf`, 'models/buildings/low-poly_outsource_tavern.glb'],
+    church: [`${KAYKIT_MEDIEVAL_BLUE}/building_church_blue.gltf`, 'models/buildings/low-poly_outsource_tavern.glb'],
+    tower: [`${KAYKIT_MEDIEVAL_BLUE}/building_tower_A_blue.gltf`, 'models/buildings/weapon_shop.glb'],
+    well: [`${KAYKIT_MEDIEVAL_BLUE}/building_well_blue.gltf`, 'models/buildings/weapon_shop.glb']
   },
   env: {
     tree: ['models/environment/tree_01.glb', 'models/environment/tree_02.glb', 'models/environment/tree_03.glb'],
@@ -203,7 +218,24 @@ const MODEL_PATHS = {
     fern: 'models/environment/fern.glb',
     mushroom: 'models/environment/mushroom.glb',
     deadTree: 'models/environment/dead_tree.glb',
-    rock: ['models/environment/rock_medium.glb', 'models/environment/rock_small.glb', 'models/environment/rock_wide.glb']
+    rock: ['models/environment/rock_medium.glb', 'models/environment/rock_small.glb', 'models/environment/rock_wide.glb'],
+    // Gobkit's free Nature Kit is CC0 and CORS-enabled. These are optional visual anchors;
+    // every placement has a bundled local fallback so GitHub Pages still works if the CDN is unavailable.
+    advancedTree: [
+      'https://gobkit.com/freebies/environment/TreeHigh001.glb',
+      'https://gobkit.com/freebies/environment/TreeHigh002.glb',
+      'https://gobkit.com/freebies/environment/TreeMed001.glb'
+    ],
+    advancedCliff: [
+      'https://gobkit.com/freebies/environment/Cliff001.glb',
+      'https://gobkit.com/freebies/environment/Cliff002.glb',
+      'https://gobkit.com/freebies/environment/Cliff003.glb'
+    ],
+    advancedMountain: [
+      'https://gobkit.com/freebies/environment/Mountain001.glb',
+      'https://gobkit.com/freebies/environment/Mountain002.glb',
+      'https://gobkit.com/freebies/environment/MountainFar001.glb'
+    ]
   }
 };
 
@@ -245,6 +277,7 @@ let playerWeapon = null;
 let playerWeaponSocket = null;
 let monsters = [];
 let npcs = [];
+let ambientNpcs = [];
 let portals = [];
 let projectiles = [];
 let envGroup;
@@ -260,6 +293,8 @@ let modelCache = {};
 let modelAnimations = {};
 let mixers = [];
 let townCenter = new THREE.Vector3(0, 0, 0);
+const townSafeBounds = { minX: -22, maxX: 22, minZ: -18, maxZ: 15, gateHalfWidth: 4.2 };
+let townSafeStatus = false;
 let worldColliders = [];
 let coverColliders = [];
 let bossCoverColliders = [];
@@ -942,6 +977,156 @@ function createGroundAccent(x, z, width, depth, color, rotation = 0, y = 0.025) 
   return mesh;
 }
 
+
+function isInsideTownSafeZone(position, margin = 0) {
+  if (!position || state.inBossRoom || state.currentAct === 3) return false;
+  return position.x >= townSafeBounds.minX - margin &&
+    position.x <= townSafeBounds.maxX + margin &&
+    position.z >= townSafeBounds.minZ - margin &&
+    position.z <= townSafeBounds.maxZ + margin;
+}
+
+function isTownRoadCorridor(x, z, halfWidth = 7.5) {
+  return Math.abs(x) <= halfWidth && z <= townSafeBounds.minZ + 3 && z >= -86;
+}
+
+function pointOutsideTownAndRoad(x, z, townMargin = 5, roadHalfWidth = 7.5) {
+  const p = new THREE.Vector3(x, 0, z);
+  return !isInsideTownSafeZone(p, townMargin) && !isTownRoadCorridor(x, z, roadHalfWidth);
+}
+
+function nearestTownExitPoint(from) {
+  const x = THREE.MathUtils.clamp(from.x, -townSafeBounds.gateHalfWidth * 0.65, townSafeBounds.gateHalfWidth * 0.65);
+  return new THREE.Vector3(x, 0, townSafeBounds.minZ - 4.5);
+}
+
+function updateSafeZoneIndicator() {
+  const nowSafe = !!playerGroup && !state.inBossRoom && isInsideTownSafeZone(playerGroup.position, -0.2);
+  if (nowSafe === townSafeStatus) return;
+  townSafeStatus = nowSafe;
+  const badge = document.getElementById('safe-zone-badge');
+  if (badge) badge.classList.toggle('hidden', !nowSafe);
+}
+
+function createTownFenceSegment(x, z, length, rotation = 0) {
+  const group = new THREE.Group();
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x5b5651, roughness: 0.96 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6a4328, roughness: 0.9 });
+  const postSpacing = 3.0;
+  const posts = Math.max(2, Math.floor(length / postSpacing) + 1);
+  for (let i = 0; i < posts; i++) {
+    const px = -length / 2 + (length * i) / (posts - 1);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.65, 0.55), stoneMat);
+    base.position.set(px, 0.82, 0);
+    base.castShadow = true;
+    group.add(base);
+  }
+  for (const y of [0.72, 1.25]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.18, 0.18), woodMat);
+    rail.position.y = y;
+    rail.castShadow = true;
+    group.add(rail);
+  }
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  envGroup.add(group);
+  if (Math.abs(Math.sin(rotation)) > 0.7) addBoxCollider(x, z, 0.75, length, 1.7, 'solid');
+  else addBoxCollider(x, z, length, 0.75, 1.7, 'solid');
+  return group;
+}
+
+function createTownGate() {
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x5f5b57, roughness: 0.92 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x5f371f, roughness: 0.9 });
+  const gateZ = townSafeBounds.minZ;
+  for (const x of [-5.5, 5.5]) {
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4.3, 1.2), stoneMat);
+    tower.position.set(x, 2.15, gateZ);
+    tower.castShadow = true;
+    envGroup.add(tower);
+    addBoxCollider(x, gateZ, 1.2, 1.2, 4.3, 'solid');
+    const lantern = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 12, 10),
+      new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xff9f32, emissiveIntensity: 1.7 })
+    );
+    lantern.position.set(x, 3.7, gateZ - 0.75);
+    envGroup.add(lantern);
+    const light = new THREE.PointLight(0xffb05a, state.currentAct === 2 ? 1.5 : 0.9, 12, 2);
+    light.position.copy(lantern.position);
+    envGroup.add(light);
+  }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(10, 0.55, 0.65), woodMat);
+  beam.position.set(0, 3.7, gateZ);
+  beam.castShadow = true;
+  envGroup.add(beam);
+  const sign = createTextSprite('VALOR HAVEN  •  SAFE ZONE', '#fff0b8');
+  sign.scale.set(7.8, 1.3, 1);
+  sign.position.set(0, 4.75, gateZ - 0.4);
+  envGroup.add(sign);
+}
+
+function createTownPlaza() {
+  const plaza = createGroundAccent(0, -1.5, 28, 22, 0x7b756a, 0, 0.045);
+  plaza.material.roughness = 1;
+  createGroundAccent(0, -25, 8.5, 46, 0x71644d, 0, 0.05);
+  createGroundAccent(0, 9, 12, 10, 0x736c61, 0, 0.05);
+  for (let x = -12; x <= 12; x += 4) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 21), new THREE.MeshStandardMaterial({ color: 0x5b574f, roughness: 1 }));
+    line.position.set(x, 0.055, -1.5);
+    envGroup.add(line);
+  }
+  for (let z = -10; z <= 7; z += 3.5) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(28, 0.015, 0.06), new THREE.MeshStandardMaterial({ color: 0x5b574f, roughness: 1 }));
+    line.position.set(0, 0.056, z);
+    envGroup.add(line);
+  }
+
+  // Central fountain gives the town a readable landmark like a proper RPG hub.
+  const stone = new THREE.MeshStandardMaterial({ color: 0x77736b, roughness: 0.9 });
+  const water = new THREE.MeshStandardMaterial({ color: 0x4b9fc4, roughness: 0.18, metalness: 0.05, transparent: true, opacity: 0.88 });
+  const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.35, 0.55, 28), stone);
+  basin.position.set(0, 0.28, 1.5);
+  basin.castShadow = true;
+  basin.receiveShadow = true;
+  envGroup.add(basin);
+  const pool = new THREE.Mesh(new THREE.CylinderGeometry(1.85, 1.85, 0.12, 28), water);
+  pool.position.set(0, 0.62, 1.5);
+  envGroup.add(pool);
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.55, 2.4, 12), stone);
+  column.position.set(0, 1.65, 1.5);
+  column.castShadow = true;
+  envGroup.add(column);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 12), stone);
+  top.position.set(0, 2.9, 1.5);
+  envGroup.add(top);
+  addWorldCollider(0, 1.5, 2.35, 3.2, 'solid');
+}
+
+function createMarketStall(x, z, color = 0x8f3434, rotation = 0) {
+  const group = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x64432c, roughness: 0.95 });
+  const cloth = new THREE.MeshStandardMaterial({ color, roughness: 0.88, side: THREE.DoubleSide });
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.25, 1.45), wood);
+  counter.position.y = 1.0;
+  counter.castShadow = true;
+  group.add(counter);
+  for (const px of [-1.45, 1.45]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.7, 0.16), wood);
+    post.position.set(px, 1.35, 0);
+    post.castShadow = true;
+    group.add(post);
+  }
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.12, 2.15), cloth);
+  canopy.position.y = 2.55;
+  canopy.rotation.z = 0.06;
+  canopy.castShadow = true;
+  group.add(canopy);
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  envGroup.add(group);
+  addBoxCollider(x, z, 3.2, 1.6, 2.8, 'solid');
+}
+
 function buildLandscapeFeatures(actNum) {
   if (actNum === 3) return;
   const hillColor = actNum === 1 ? 0x315f35 : 0x142619;
@@ -1209,9 +1394,14 @@ function randomMonsterSpawnPoint(actNum) {
       z: zone.z + (Math.random() - 0.5) * zone.d
     };
   }
-  const angle = Math.random() * Math.PI * 2;
-  const r = 20 + Math.random() * 50;
-  return { x: Math.cos(angle) * r, z: Math.sin(angle) * r };
+  for (let attempts = 0; attempts < 30; attempts++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 30 + Math.random() * 58;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+    if (pointOutsideTownAndRoad(x, z, 8, 8.5)) return { x, z };
+  }
+  return { x: 28, z: -35 };
 }
 
 function damagePlayer(amount, sourcePosition = null, knockbackStrength = 0) {
@@ -1276,7 +1466,7 @@ async function setupThree() {
   scene = new THREE.Scene();
   clock = new THREE.Clock();
 
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+  camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 320);
   camera.position.set(0, 8, 12);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1331,6 +1521,8 @@ async function buildAct(actNum) {
   portals = [];
   npcs.forEach(n => scene.remove(n.mesh));
   npcs = [];
+  ambientNpcs.forEach(n => scene.remove(n.mesh));
+  ambientNpcs = [];
 
   const cfg = ACT[actNum];
   scene.background = new THREE.Color(cfg.fog);
@@ -1367,8 +1559,9 @@ async function buildAct(actNum) {
     buildActGroundDetails(actNum);
     buildLandscapeFeatures(actNum);
   }
+  if (actNum !== 3) await buildTown();
   await scatterEnvironment(actNum);
-  await buildTown();
+  if (actNum !== 3) await spawnAmbientTownNPCs(actNum);
   await spawnMonsters(actNum);
 
   if (!isBossDefeated(actNum) && !state.freeRoam) await spawnBossPortal(actNum);
@@ -1393,158 +1586,186 @@ async function scatterEnvironment(actNum) {
     return;
   }
 
-  // Keep tall scenery away from the camera/town corridor so the view stays readable.
-  const trees = MODEL_PATHS.env.tree;
-  const pines = MODEL_PATHS.env.pine;
-  const count = actNum === 1 ? 18 : 30;
+  // Authored forest belts: dense clusters around clearings and a readable road out of the safe town.
+  const clusterCenters = actNum === 1
+    ? [[-33,-34], [32,-37], [-46,-7], [47,-9], [-42,34], [42,31], [-20,-67], [23,-69], [-65,-49], [63,-48]]
+    : [[-29,-32], [29,-31], [-43,-5], [44,-8], [-41,28], [41,30], [-18,-61], [20,-65], [-60,-43], [59,-46], [-59,20], [57,17]];
+  const treeCountPerCluster = actNum === 1 ? 7 : 10;
+  const localTrees = actNum === 2 ? MODEL_PATHS.env.pine : MODEL_PATHS.env.tree;
 
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r = 32 + Math.random() * 54;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
-    if (Math.abs(x) < 15 && Math.abs(z) < 18) continue;
-    if (Math.abs(x) < 9 && z < 10 && z > -70) continue;
+  for (let c = 0; c < clusterCenters.length; c++) {
+    const [cx, cz] = clusterCenters[c];
+    for (let i = 0; i < treeCountPerCluster; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 2.5 + Math.random() * (actNum === 1 ? 10 : 12);
+      const x = cx + Math.cos(a) * r;
+      const z = cz + Math.sin(a) * r;
+      if (!pointOutsideTownAndRoad(x, z, 5.5, 8.2)) continue;
+      try {
+        const local = localTrees[(i + c) % localTrees.length];
+        const remote = MODEL_PATHS.env.advancedTree[(i + c) % MODEL_PATHS.env.advancedTree.length];
+        const loaded = (i % 4 === 0)
+          ? await loadFirstAvailable([remote, local])
+          : { model: await loadModel(local), path: local };
+        const m = loaded.model;
+        fitModel(m, actNum === 2 ? 6.3 + Math.random() * 3.2 : 5.2 + Math.random() * 2.5);
+        m.position.set(x, 0, z);
+        m.rotation.y = Math.random() * Math.PI * 2;
+        envGroup.add(m);
+        addWorldCollider(x, z, actNum === 2 ? 1.2 : 1.0, 8, actNum === 2 ? 'cover' : 'solid');
+      } catch {}
+    }
+  }
 
-    const path = actNum === 2
-      ? pines[Math.floor(Math.random() * pines.length)]
-      : trees[Math.floor(Math.random() * trees.length)];
-
+  // Outer tree line and mountains make the world feel larger than the playable ground plane.
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2 + 0.12 * (i % 2);
+    const r = 82 + (i % 3) * 4;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
     try {
+      const path = actNum === 2 ? MODEL_PATHS.env.pine[i % MODEL_PATHS.env.pine.length] : MODEL_PATHS.env.tree[i % MODEL_PATHS.env.tree.length];
       const m = await loadModel(path);
-      fitModel(m, actNum === 2 ? 5.3 + Math.random() * 1.8 : 4.4 + Math.random() * 1.5);
+      fitModel(m, actNum === 2 ? 8.5 + Math.random() * 3 : 7.0 + Math.random() * 2.5);
       m.position.set(x, 0, z);
       m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
-      addWorldCollider(x, z, actNum === 2 ? 1.15 : 0.95, actNum === 2 ? 7.5 : 6.5, actNum === 2 ? 'cover' : 'solid');
     } catch {}
   }
 
-  // Dense small-scale foliage makes the world feel authored without blocking combat or the camera.
+  // A handful of larger CC0 cliff/mountain silhouettes add depth without blocking combat.
+  const vistas = [[-72,-72],[72,-68],[-78,55],[77,53]];
+  for (let i = 0; i < vistas.length; i++) {
+    const [x,z] = vistas[i];
+    try {
+      const fallback = MODEL_PATHS.env.rock[i % MODEL_PATHS.env.rock.length];
+      const loaded = await loadFirstAvailable([MODEL_PATHS.env.advancedMountain[i % MODEL_PATHS.env.advancedMountain.length], fallback]);
+      const m = loaded.model;
+      fitModel(m, 20 + (i % 2) * 6);
+      m.position.set(x, -1.2, z);
+      m.rotation.y = i * 0.85;
+      envGroup.add(m);
+    } catch {}
+  }
+
+  // Forest-floor dressing: grass, flowers, ferns, mushrooms and boulders in banks rather than uniform random noise.
   const clutter = actNum === 1
     ? [MODEL_PATHS.env.grass[0], MODEL_PATHS.env.grass[1], MODEL_PATHS.env.bush, MODEL_PATHS.env.bushFlowers]
     : [MODEL_PATHS.env.fern, MODEL_PATHS.env.mushroom, MODEL_PATHS.env.bush, MODEL_PATHS.env.grass[1]];
-  const clutterCount = actNum === 1 ? 46 : 58;
+  const clutterCount = actNum === 1 ? 95 : 125;
   for (let i = 0; i < clutterCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r = 14 + Math.random() * 68;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
-    if (Math.abs(x) < 4.5 && z < 7 && z > -66) continue;
+    const cluster = clusterCenters[i % clusterCenters.length];
+    const a = Math.random() * Math.PI * 2;
+    const r = 2 + Math.random() * 16;
+    const x = cluster[0] + Math.cos(a) * r;
+    const z = cluster[1] + Math.sin(a) * r;
+    if (!pointOutsideTownAndRoad(x, z, 3, 6.8)) continue;
     try {
       const path = clutter[Math.floor(Math.random() * clutter.length)];
       const m = await loadModel(path);
-      const tall = path.includes('bush');
-      fitModel(m, tall ? 0.8 + Math.random() * 0.7 : 0.35 + Math.random() * 0.45);
+      fitModel(m, path.includes('bush') ? 0.8 + Math.random() * 0.8 : 0.3 + Math.random() * 0.55);
       m.position.set(x, 0.01, z);
       m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
     } catch {}
   }
 
-  for (let i = 0; i < 18; i++) {
-    const x = (Math.random() - 0.5) * 125;
-    const z = (Math.random() - 0.5) * 125;
-    if (Math.abs(x) < 11 && Math.abs(z) < 13) continue;
-    if (Math.abs(x) < 5 && z < 7 && z > -66) continue;
+  for (let i = 0; i < 30; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 31 + Math.random() * 48;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (!pointOutsideTownAndRoad(x, z, 5, 8)) continue;
     try {
-      const m = await loadModel(MODEL_PATHS.env.rock[Math.floor(Math.random() * MODEL_PATHS.env.rock.length)]);
-      fitModel(m, 0.7 + Math.random() * 1.25);
+      const m = await loadModel(MODEL_PATHS.env.rock[i % MODEL_PATHS.env.rock.length]);
+      fitModel(m, 0.7 + Math.random() * 1.6);
       m.position.set(x, 0, z);
       m.rotation.y = Math.random() * Math.PI * 2;
       envGroup.add(m);
-      addWorldCollider(x, z, 0.65, 1.7, 'solid');
+      addWorldCollider(x, z, 0.7, 1.8, 'solid');
     } catch {}
   }
 }
 
 function addTownSetDressing() {
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4c2f, roughness: 0.95 });
-  const iron = new THREE.MeshStandardMaterial({ color: 0x282b30, roughness: 0.6, metalness: 0.45 });
+  createTownPlaza();
 
-  // Low fence sections frame the safe town without boxing the player in.
-  const fenceSegments = [
-    [-13, 4, 4.5, 0], [-7, 7, 5, 0], [7, 7, 5, 0], [13, 4, 4.5, 0],
-    [-14, -13, 5, 0], [14, -13, 5, 0]
-  ];
-  fenceSegments.forEach(([x, z, length, rot]) => {
-    const group = new THREE.Group();
-    const railA = new THREE.Mesh(new THREE.BoxGeometry(length, 0.13, 0.14), wood);
-    const railB = railA.clone();
-    railA.position.y = 0.72;
-    railB.position.y = 1.18;
-    group.add(railA, railB);
-    for (const px of [-length / 2, 0, length / 2]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.17, 1.55, 0.17), wood);
-      post.position.set(px, 0.76, 0);
-      post.castShadow = true;
-      group.add(post);
-    }
-    group.position.set(x, 0, z);
-    group.rotation.y = rot;
-    envGroup.add(group);
-    addBoxCollider(x, z, length, 0.32, 1.55, 'solid');
+  // Full safe-zone perimeter. Monsters are also blocked logically, not just by these colliders.
+  const minX = townSafeBounds.minX, maxX = townSafeBounds.maxX;
+  const minZ = townSafeBounds.minZ, maxZ = townSafeBounds.maxZ;
+  const gate = townSafeBounds.gateHalfWidth;
+  createTownFenceSegment(minX, (minZ + maxZ) / 2, maxZ - minZ, Math.PI / 2);
+  createTownFenceSegment(maxX, (minZ + maxZ) / 2, maxZ - minZ, Math.PI / 2);
+  createTownFenceSegment(0, maxZ, maxX - minX, 0);
+  createTownFenceSegment((minX - gate) / 2, minZ, Math.abs(minX + gate), 0);
+  createTownFenceSegment((maxX + gate) / 2, minZ, Math.abs(maxX - gate), 0);
+  createTownGate();
+
+  // Market square and social-space dressing.
+  createMarketStall(-7.2, 7.2, 0x8f3d32, 0.03);
+  createMarketStall(7.2, 7.2, 0x365f8b, -0.03);
+
+  const benchMat = new THREE.MeshStandardMaterial({ color: 0x6b472d, roughness: 0.92 });
+  [[-5.2,2.2,Math.PI/2],[5.2,2.2,-Math.PI/2],[-5.2,-4.2,Math.PI/2],[5.2,-4.2,-Math.PI/2]].forEach(([x,z,r]) => {
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 0.65), benchMat);
+    seat.position.set(x,0.55,z); seat.rotation.y=r; seat.castShadow=true; envGroup.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.8, 0.14), benchMat);
+    back.position.set(x,0.98,z); back.rotation.y=r; back.castShadow=true; envGroup.add(back);
   });
 
-  // Warm lanterns make town readable at a glance in all three Acts.
-  [[-3.5, -1], [3.5, -1], [-3.5, -10.5], [3.5, -10.5]].forEach(([x, z]) => {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.6, 8), iron);
-    pole.position.set(x, 1.3, z);
-    pole.castShadow = true;
-    envGroup.add(pole);
-    const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.19, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffa52e, emissiveIntensity: 1.3 })
-    );
-    lamp.position.set(x, 2.45, z);
-    envGroup.add(lamp);
-    const light = new THREE.PointLight(0xffb04a, state.currentAct === 2 ? 1.25 : 0.75, 9, 2);
-    light.position.set(x, 2.4, z);
-    envGroup.add(light);
+  const iron = new THREE.MeshStandardMaterial({ color: 0x282b30, roughness: 0.6, metalness: 0.45 });
+  [[-8,-12],[8,-12],[-8,10],[8,10],[-3,-12],[3,-12]].forEach(([x, z]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.8, 8), iron);
+    pole.position.set(x, 1.4, z); pole.castShadow = true; envGroup.add(pole);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffa52e, emissiveIntensity: 1.5 }));
+    lamp.position.set(x, 2.62, z); envGroup.add(lamp);
+    const light = new THREE.PointLight(0xffb04a, state.currentAct === 2 ? 1.35 : 0.82, 10, 2);
+    light.position.copy(lamp.position); envGroup.add(light);
   });
 }
 
-async function buildTown() {
+async function addTownBuilding(pathSpec, x, z, height, rotation = 0, colliderW = 6, colliderD = 5) {
   try {
-    const inn = await loadModel(MODEL_PATHS.buildings.inn);
-    fitModel(inn, 6);
-    inn.position.set(-8, 0, -6);
-    inn.rotation.y = Math.PI * 0.02;
-    envGroup.add(inn);
-    addBoxCollider(-8, -6, 6.2, 5.2, 6, 'solid');
-  } catch {}
+    const loaded = await loadFirstAvailable(pathSpec);
+    const m = loaded.model;
+    fitModel(m, height);
+    m.position.set(x, 0, z);
+    m.rotation.y = rotation;
+    envGroup.add(m);
+    addBoxCollider(x, z, colliderW, colliderD, height, 'solid');
+    return m;
+  } catch { return null; }
+}
 
-  try {
-    const shop = await loadModel(MODEL_PATHS.buildings.shop);
-    fitModel(shop, 4);
-    shop.position.set(8, 0, -5);
-    shop.rotation.y = -Math.PI * 0.04;
-    envGroup.add(shop);
-    addBoxCollider(8, -5, 5.2, 4.2, 4, 'solid');
-  } catch {}
+async function buildTown() {
+  // A proper hub: an enclosed social district with streets, civic buildings, homes and a controlled forest gate.
+  await addTownBuilding(MODEL_PATHS.buildings.inn, -13.2, -7.0, 6.5, 0.02, 7.0, 5.8);
+  await addTownBuilding(MODEL_PATHS.buildings.shop, 13.0, -6.5, 5.6, -0.05, 6.0, 5.2);
+  await addTownBuilding(MODEL_PATHS.buildings.market, -13.6, 7.4, 4.6, Math.PI + 0.04, 5.5, 4.5);
+  await addTownBuilding(MODEL_PATHS.buildings.homeA, 13.8, 7.7, 5.1, Math.PI - 0.05, 5.4, 4.6);
+
+  // Secondary skyline pieces make the hub read as a settlement rather than three isolated shops.
+  await addTownBuilding(MODEL_PATHS.buildings.homeB, -17.2, 1.0, 4.2, Math.PI / 2, 4.6, 4.2);
+  await addTownBuilding(MODEL_PATHS.buildings.church, 17.0, 1.8, 5.5, -Math.PI / 2, 4.8, 4.6);
+  await addTownBuilding(MODEL_PATHS.buildings.tower, -18.0, 11.2, 5.8, Math.PI / 2, 3.5, 3.5);
+
+  addTownSetDressing();
 
   try {
     const smith = await loadModel(MODEL_PATHS.npcs.weaponsmith);
     fitModel(smith, 1.8);
-    smith.position.set(8, 0, -1.2);
+    smith.position.set(10.2, 0, -1.9);
     scene.add(smith);
     const animation = createAnimationController(smith, MODEL_PATHS.npcs.weaponsmith);
     playAnimation(animation, 'idle');
     npcs.push({ mesh: smith, role: 'Weaponsmith', type: 'shop', animation });
-  } catch {
-    const geo = new THREE.CapsuleGeometry(0.4, 1, 4, 8);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x886633 });
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(8, 0.9, -1.2);
-    scene.add(m);
-    npcs.push({ mesh: m, role: 'Weaponsmith', type: 'shop' });
-  }
+  } catch {}
 
   try {
     const loaded = await loadFirstAvailable(MODEL_PATHS.npcs.innkeeper);
     const innk = loaded.model;
-    fitModel(innk, 1.78);
-    innk.position.set(-8, 0, -1.2);
+    fitModel(innk, 1.82);
+    innk.position.set(-10.2, 0, -1.8);
     scene.add(innk);
     const animation = createAnimationController(innk, loaded.path);
     playAnimation(animation, 'idle');
@@ -1554,15 +1775,67 @@ async function buildTown() {
   try {
     const loaded = await loadFirstAvailable(MODEL_PATHS.npcs.alchemist);
     const alc = loaded.model;
-    fitModel(alc, 1.72);
-    alc.position.set(0, 0, -8);
+    fitModel(alc, 1.76);
+    alc.position.set(4.0, 0, 8.0);
     scene.add(alc);
     const animation = createAnimationController(alc, loaded.path);
     playAnimation(animation, 'idle');
     npcs.push({ mesh: alc, role: 'Alchemist', type: 'potion', animation });
   } catch {}
+}
 
-  addTownSetDressing();
+const CIVILIAN_ROUTES = [
+  [[-7,-9],[-2,-9],[-2,-4],[-7,-4]],
+  [[7,-9],[2,-9],[2,-4],[7,-4]],
+  [[-9,6],[-3,6],[-3,10],[-9,10]],
+  [[9,6],[3,6],[3,10],[9,10]],
+  [[-6,0],[-2,3],[3,3],[6,0],[3,-3],[-2,-3]],
+  [[-15,1],[-11,4],[-10,10],[-15,10]],
+  [[15,1],[11,4],[10,10],[15,10]],
+  [[-4,12],[0,10],[4,12],[0,6]]
+];
+
+async function spawnAmbientTownNPCs(actNum) {
+  if (actNum === 3 && state.freeRoam) return;
+  const count = actNum === 1 ? 8 : 6;
+  for (let i = 0; i < count; i++) {
+    try {
+      const path = MODEL_PATHS.npcs.civilians[i % MODEL_PATHS.npcs.civilians.length];
+      const m = await loadModel(path);
+      fitModel(m, 1.62 + (i % 3) * 0.06);
+      const route = CIVILIAN_ROUTES[i % CIVILIAN_ROUTES.length].map(([x,z]) => new THREE.Vector3(x,0,z));
+      m.position.copy(route[0]);
+      m.rotation.y = (i % 2) * Math.PI;
+      scene.add(m);
+      const animation = createAnimationController(m, path);
+      playAnimation(animation, 'walk');
+      ambientNpcs.push({ mesh: m, route, routeIndex: 1, speed: 1.25 + (i % 3) * 0.18, animation, pause: Math.random() * 0.8 });
+    } catch {}
+  }
+}
+
+function updateAmbientTownNPCs(dt) {
+  for (const npc of ambientNpcs) {
+    if (!npc.mesh.visible) continue;
+    if (npc.pause > 0) {
+      npc.pause -= dt;
+      playAnimation(npc.animation, 'idle');
+      continue;
+    }
+    const target = npc.route[npc.routeIndex];
+    const delta = target.clone().sub(npc.mesh.position).setY(0);
+    const dist = delta.length();
+    if (dist < 0.35) {
+      npc.routeIndex = (npc.routeIndex + 1) % npc.route.length;
+      npc.pause = 0.25 + Math.random() * 0.9;
+      playAnimation(npc.animation, 'idle');
+      continue;
+    }
+    delta.normalize();
+    npc.mesh.position.addScaledVector(delta, Math.min(dist, npc.speed * dt));
+    npc.mesh.lookAt(npc.mesh.position.x + delta.x, npc.mesh.position.y, npc.mesh.position.z + delta.z);
+    playAnimation(npc.animation, 'walk');
+  }
 }
 
 async function spawnPlayer() {
@@ -1578,7 +1851,7 @@ async function spawnPlayer() {
     const loaded = await loadFirstAvailable(candidates);
     playerModel = loaded.model;
     playerModelPath = loaded.path;
-    fitModel(playerModel, 1.82);
+    fitModel(playerModel, 1.90);
     playerModel.userData.baseY = playerModel.position.y;
     playerGroup.add(playerModel);
     playerAnimation = createAnimationController(playerModel, playerModelPath);
@@ -1663,6 +1936,7 @@ async function createMonster(type, x, z, isBoss = false) {
 
   return {
     mesh,
+    spawnPoint: new THREE.Vector3(x, 0, z),
     type,
     level,
     isBoss,
@@ -2001,6 +2275,7 @@ function clearBossArena() {
   bossCoverColliders = [];
   if (envGroup) envGroup.visible = true;
   npcs.forEach(n => { n.mesh.visible = true; });
+  ambientNpcs.forEach(n => { n.mesh.visible = true; });
   portals.forEach(p => {
     p.visible = true;
     if (p.userData.light) p.userData.light.visible = true;
@@ -2089,6 +2364,7 @@ async function createBossArena(actNum) {
   scene.add(bossArenaGroup);
   envGroup.visible = false;
   npcs.forEach(n => { n.mesh.visible = false; });
+  ambientNpcs.forEach(n => { n.mesh.visible = false; });
   portals.forEach(p => {
     p.visible = false;
     if (p.userData.light) p.userData.light.visible = false;
@@ -2157,6 +2433,13 @@ function drawMinimap() {
     ctx.arc(cx, cy, 55, 0, Math.PI * 2);
     ctx.stroke();
   } else {
+    if (state.currentAct !== 3) {
+      ctx.strokeStyle = 'rgba(94, 220, 128, 0.58)';
+      ctx.lineWidth = 1.5;
+      const x = cx + (townSafeBounds.minX - playerGroup.position.x) * scale;
+      const y = cy + (townSafeBounds.minZ - playerGroup.position.z) * scale;
+      ctx.strokeRect(x, y, (townSafeBounds.maxX - townSafeBounds.minX) * scale, (townSafeBounds.maxZ - townSafeBounds.minZ) * scale);
+    }
     if (state.currentAct === 3) {
       ctx.strokeStyle = 'rgba(180,180,195,0.42)';
       ctx.lineWidth = 1;
@@ -2223,6 +2506,7 @@ function drawMinimap() {
 
 function spawnProjectile(mon, options = {}) {
   if (!playerGroup || mon.hp <= 0) return;
+  if (!mon.isBoss && isInsideTownSafeZone(playerGroup.position, 0.5)) return;
   gameAudio.play(mon.isBoss ? 'fireball' : 'projectile');
   const start = mon.mesh.position.clone().add(new THREE.Vector3(0, mon.isBoss ? 2.2 : 1.3, 0));
   const target = playerGroup.position.clone().add(new THREE.Vector3(0, 1.1, 0));
@@ -2279,7 +2563,8 @@ function updateProjectiles(dt) {
 
     p.mesh.position.addScaledVector(p.velocity, dt);
     const hitCover = projectileHitsCover(p);
-    if (p.life <= 0 || hitCover) {
+    const enteredSafeTown = !state.inBossRoom && !p.owner?.isBoss && isInsideTownSafeZone(p.mesh.position, 0.2);
+    if (p.life <= 0 || hitCover || enteredSafeTown) {
       if (hitCover) {
         gameAudio.play('blocked');
         spawnBurst(p.mesh.position.clone(), 0xd9c5a3, 8, 2.6, 0.30, 0.075);
@@ -2529,8 +2814,12 @@ function animate() {
   }
 
   const speed = 8;
-  const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
-  const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
+  // Camera-relative controls: W/Up always moves toward the top of the screen and S/Down toward the camera.
+  // This removes the old model-facing dependency that made W/S feel swapped after rotations.
+  const forward = playerGroup.position.clone().sub(camera.position).setY(0);
+  if (forward.lengthSq() < 0.001) forward.set(0, 0, -1);
+  forward.normalize();
+  const right = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
   const move = new THREE.Vector3();
   if (keys['KeyW'] || keys['ArrowUp']) move.add(forward);
   if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
@@ -2588,8 +2877,10 @@ function animate() {
     footstepTimer = 0.34;
   }
   updatePlayerVisual(dt, moving && !state.falling);
+  updateAmbientTownNPCs(dt);
+  updateSafeZoneIndicator();
 
-  const offset = new THREE.Vector3(0, 6.7, 10.5);
+  const offset = new THREE.Vector3(0, 5.4, 8.2);
   offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerGroup.rotation.y);
   const cameraTarget = playerGroup.position.clone().add(new THREE.Vector3(0, 1.45, 0));
   const desiredCamera = playerGroup.position.clone().add(offset);
@@ -2615,6 +2906,7 @@ function animate() {
 
     const dist = mon.mesh.position.distanceTo(playerGroup.position);
     const aggro = mon.isBoss ? 45 : 24;
+    if (mon.barBg) mon.barBg.visible = mon.isBoss || dist < aggro + 4;
     const dir = playerGroup.position.clone().sub(mon.mesh.position).setY(0);
     if (dir.lengthSq() > 0.0001) dir.normalize();
     mon.mesh.lookAt(playerGroup.position.x, mon.mesh.position.y, playerGroup.position.z);
@@ -2622,6 +2914,22 @@ function animate() {
     if (mon.isBoss) {
       updateBossAI(mon, dt, dist, dir);
       updateProceduralMonsterVisual(mon, dt, mon.aiState === 'charge');
+      return;
+    }
+
+    const playerSafe = isInsideTownSafeZone(playerGroup.position, 0.4);
+    const monsterSafe = isInsideTownSafeZone(mon.mesh.position, 0.2);
+    if (playerSafe || monsterSafe) {
+      // Town is a true sanctuary: enemies disengage and move back to their wilderness spawn.
+      const home = mon.spawnPoint || nearestTownExitPoint(mon.mesh.position);
+      const back = home.clone().sub(mon.mesh.position).setY(0);
+      let returning = false;
+      if (back.length() > 1.0) {
+        back.normalize();
+        returning = moveWithCollisions(mon.mesh, back.multiplyScalar(mon.speed * 0.85 * dt), mon.type === 'golem' ? 0.95 : 0.65, state.currentAct === 3);
+      }
+      if (mon.animLock <= 0) playAnimation(mon.animation, returning ? 'walk' : 'idle');
+      updateProceduralMonsterVisual(mon, dt, returning);
       return;
     }
 
